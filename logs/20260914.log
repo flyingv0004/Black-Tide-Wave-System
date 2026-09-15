@@ -1,0 +1,170 @@
+ML	0	07:02:07.121	Terminal	MetaTrader 5 EXNESS x64 build 6182 started for Exness Technologies Ltd
+DE	0	07:02:07.122	Terminal	Windows 11 build 26200, 16 x AMD Ryzen 7 5800H with Radeon, AVX2, 6 / 15 Gb memory, 20 / 456 Gb disk, UAC, admin, GMT+7
+EE	0	07:02:07.122	Terminal	C:\TradeExness1\MetaTrader 5 EXNESS
+RO	0	07:02:07.127	MCP	started on 127.0.0.1:22346
+MI	0	07:02:08.542	Indicators	custom indicator BTW v794-7 - TEST (BTCUSD,M1) loaded succesfully
+LG	0	07:02:08.578	Experts	expert Btw signal ea objectver_Test (BTCUSD,M1) loaded successfully
+EQ	0	07:02:09.311	Network	'433929760': authorized on Exness-MT5Trial7 through Access Point #1 (ping: 34.36 ms, build 6182)
+PR	0	07:02:09.311	Network	'433929760': previous successful authorization performed from 171.97.52.70 on 2026.09.14 00:12:12
+MS	0	07:02:09.602	Network	'433929760': terminal synchronized with Exness Technologies Ltd: 0 positions, 0 orders, 314 symbols, 0 spreads
+ML	0	07:02:09.602	Network	'433929760': trading has been enabled, demo account - hedging mode
+GP	0	07:02:09.602	Network	'433929760': balance management has been disabled - demo account
+LH	0	07:02:09.801	Indicators	custom indicator BTW v794-7 - TEST (BTCUSD,M1) loaded succesfully
+HF	0	07:02:11.412	Network	'433929760': scanning network for access points
+HS	0	07:02:18.626	Network	'433929760': scanning network finished
+ED	0	08:22:59.875	Trades	'433929760': market buy 0.08 BTCUSD tp: 78056.46
+KO	0	08:22:59.920	Trades	'433929760': accepted market buy 0.08 BTCUSD tp: 78056.46
+DK	0	08:23:00.585	Trades	'433929760': deal #4146755799 buy 0.08 BTCUSD at 77969.24 done (based on order #4710397848)
+DE	0	08:23:00.586	Trades	'433929760': order #4710397848 buy 0.08 / 0.08 BTCUSD at 77969.24 done in 712.463 ms (ok)
+OE	0	08:23:00.586	Trades	'433929760': market buy 0.02 BTCUSD tp: 78129.85
+RP	0	08:23:00.618	Trades	'433929760': accepted market buy 0.02 BTCUSD tp: 78129.85
+HJ	0	08:23:01.172	Trades	'433929760': deal #4146755826 buy 0.02 BTCUSD at 77969.24 done (based on order #4710397907)
+EF	0	08:23:01.173	Trades	'433929760': order #4710397907 buy 0.02 / 0.02 BTCUSD at 77969.24 done in 586.381 ms (ok)
+RK	0	08:27:21.647	Trades	'433929760': market buy 0.2 BTCUSD
+MQ	0	08:27:21.681	Trades	'433929760': accepted market buy 0.2 BTCUSD
+CK	0	08:27:22.187	Trades	'433929760': deal #4146767799 buy 0.2 BTCUSD at 77870.25 done (based on order #4710411081)
+NK	0	08:27:22.187	Trades	'433929760': order #4710411081 buy 0.2 / 0.2 BTCUSD at 77870.25 done in 540.696 ms (ok)
+DJ	0	08:31:37.552	Trades	'433929760': market sell 0.2 BTCUSD, close #4710411081 buy 0.2 BTCUSD 77870.25
+GN	0	08:31:37.585	Trades	'433929760': accepted market sell 0.2 BTCUSD, close #4710411081 buy 0.2 BTCUSD 77870.25
+IL	0	08:31:38.059	Trades	'433929760': deal #4146783990 sell 0.2 BTCUSD at 77942.46 done (based on order #4710428906)
+CS	0	08:31:38.059	Trades	'433929760': order #4710428906 sell 0.2 / 0.2 BTCUSD at 77942.46 done in 507.105 ms (ok)
+QQ	0	08:31:38.059	Trades	'433929760': market sell 0.02 BTCUSD, close #4710397907 buy 0.02 BTCUSD 77969.24
+MF	0	08:31:38.113	Trades	'433929760': accepted market sell 0.02 BTCUSD, close #4710397907 buy 0.02 BTCUSD 77969.24
+QD	0	08:31:38.654	Trades	'433929760': deal #4146784016 sell 0.02 BTCUSD at 77932.49 done (based on order #4710428949)
+FJ	0	08:31:38.655	Trades	'433929760': order #4710428949 sell 0.02 / 0.02 BTCUSD at 77932.49 done in 595.869 ms (ok)
+GH	0	08:31:38.655	Trades	'433929760': market sell 0.08 BTCUSD, close #4710397848 buy 0.08 BTCUSD 77969.24
+MH	0	08:31:38.689	Trades	'433929760': accepted market sell 0.08 BTCUSD, close #4710397848 buy 0.08 BTCUSD 77969.24
+FM	0	08:31:39.349	Trades	'433929760': deal #4146784056 sell 0.08 BTCUSD at 77938.92 done (based on order #4710428973)
+NQ	0	08:31:39.349	Trades	'433929760': order #4710428973 sell 0.08 / 0.08 BTCUSD at 77938.92 done in 694.083 ms (ok)
+NS	0	08:53:00.461	Trades	'433929760': market buy 0.08 BTCUSD tp: 78069.00
+LJ	0	08:53:00.497	Trades	'433929760': accepted market buy 0.08 BTCUSD tp: 78069.00
+DD	0	08:53:01.082	Trades	'433929760': deal #4146875523 buy 0.08 BTCUSD at 77970.37 done (based on order #4710529120)
+OO	0	08:53:01.083	Trades	'433929760': order #4710529120 buy 0.08 / 0.08 BTCUSD at 77970.37 done in 621.966 ms (ok)
+QP	0	08:53:01.083	Trades	'433929760': market buy 0.02 BTCUSD tp: 78129.27
+OK	0	08:53:01.116	Trades	'433929760': accepted market buy 0.02 BTCUSD tp: 78129.27
+GG	0	08:53:01.937	Trades	'433929760': deal #4146875607 buy 0.02 BTCUSD at 77970.95 done (based on order #4710529172)
+DH	0	08:53:01.937	Trades	'433929760': order #4710529172 buy 0.02 / 0.02 BTCUSD at 77970.95 done in 854.102 ms (ok)
+PP	0	08:57:25.448	Trades	'433929760': market buy 0.2 BTCUSD
+OJ	0	08:57:25.482	Trades	'433929760': accepted market buy 0.2 BTCUSD
+JQ	0	08:57:26.039	Trades	'433929760': deal #4146893083 buy 0.2 BTCUSD at 77918.92 done (based on order #4710549174)
+MN	0	08:57:26.040	Trades	'433929760': order #4710549174 buy 0.2 / 0.2 BTCUSD at 77918.92 done in 591.612 ms (ok)
+RO	0	09:02:42.539	Trades	'433929760': market sell 0.2 BTCUSD, close #4710549174 buy 0.2 BTCUSD 77918.92
+DP	0	09:02:42.574	Trades	'433929760': accepted market sell 0.2 BTCUSD, close #4710549174 buy 0.2 BTCUSD 77918.92
+NQ	0	09:02:42.943	Trades	'433929760': deal #4146925094 sell 0.2 BTCUSD at 77953.22 done (based on order #4710583612)
+JI	0	09:02:42.944	Trades	'433929760': order #4710583612 sell 0.2 / 0.2 BTCUSD at 77953.22 done in 405.296 ms (ok)
+LF	0	09:02:42.945	Trades	'433929760': market sell 0.02 BTCUSD, close #4710529172 buy 0.02 BTCUSD 77970.95
+NK	0	09:02:42.980	Trades	'433929760': accepted market sell 0.02 BTCUSD, close #4710529172 buy 0.02 BTCUSD 77970.95
+IK	0	09:02:43.327	Trades	'433929760': deal #4146925109 sell 0.02 BTCUSD at 77953.22 done (based on order #4710583631)
+EP	0	09:02:43.328	Trades	'433929760': order #4710583631 sell 0.02 / 0.02 BTCUSD at 77953.22 done in 383.333 ms (ok)
+OM	0	09:02:43.328	Trades	'433929760': market sell 0.08 BTCUSD, close #4710529120 buy 0.08 BTCUSD 77970.37
+IR	0	09:02:43.361	Trades	'433929760': accepted market sell 0.08 BTCUSD, close #4710529120 buy 0.08 BTCUSD 77970.37
+LP	0	09:02:43.628	Trades	'433929760': deal #4146925130 sell 0.08 BTCUSD at 77953.22 done (based on order #4710583667)
+DN	0	09:02:43.629	Trades	'433929760': order #4710583667 sell 0.08 / 0.08 BTCUSD at 77953.22 done in 301.241 ms (ok)
+CI	0	09:14:59.996	Trades	'433929760': market buy 0.08 BTCUSD tp: 78062.34
+ME	0	09:15:00.028	Trades	'433929760': accepted market buy 0.08 BTCUSD tp: 78062.34
+DN	0	09:15:00.380	Trades	'433929760': deal #4146961647 buy 0.08 BTCUSD at 77973.98 done (based on order #4710624177)
+FR	0	09:15:00.381	Trades	'433929760': order #4710624177 buy 0.08 / 0.08 BTCUSD at 77973.98 done in 385.451 ms (ok)
+CO	0	09:15:00.381	Trades	'433929760': market buy 0.02 BTCUSD tp: 78118.97
+NF	0	09:15:00.413	Trades	'433929760': accepted market buy 0.02 BTCUSD tp: 78118.97
+NQ	0	09:15:00.740	Trades	'433929760': deal #4146961754 buy 0.02 BTCUSD at 77973.98 done (based on order #4710624228)
+MS	0	09:15:00.741	Trades	'433929760': order #4710624228 buy 0.02 / 0.02 BTCUSD at 77973.98 done in 360.203 ms (ok)
+QM	0	09:18:12.809	Trades	'433929760': market buy 0.2 BTCUSD
+OD	0	09:18:12.840	Trades	'433929760': accepted market buy 0.2 BTCUSD
+IL	0	09:18:13.201	Trades	'433929760': deal #4146970134 buy 0.2 BTCUSD at 77915.06 done (based on order #4710633490)
+OQ	0	09:18:13.202	Trades	'433929760': order #4710633490 buy 0.2 / 0.2 BTCUSD at 77915.06 done in 393.028 ms (ok)
+CD	0	09:19:22.980	Trades	'433929760': market sell 0.2 BTCUSD, close #4710633490 buy 0.2 BTCUSD 77915.06
+PE	0	09:19:23.013	Trades	'433929760': accepted market sell 0.2 BTCUSD, close #4710633490 buy 0.2 BTCUSD 77915.06
+NK	0	09:19:23.237	Trades	'433929760': deal #4146972005 sell 0.2 BTCUSD at 77937.45 done (based on order #4710635649)
+KF	0	09:19:23.237	Trades	'433929760': order #4710635649 sell 0.2 / 0.2 BTCUSD at 77937.45 done in 257.699 ms (ok)
+ML	0	09:19:23.237	Trades	'433929760': market sell 0.02 BTCUSD, close #4710624228 buy 0.02 BTCUSD 77973.98
+QL	0	09:19:23.283	Trades	'433929760': accepted market sell 0.02 BTCUSD, close #4710624228 buy 0.02 BTCUSD 77973.98
+RQ	0	09:19:23.657	Trades	'433929760': deal #4146972009 sell 0.02 BTCUSD at 77937.45 done (based on order #4710635661)
+LM	0	09:19:23.658	Trades	'433929760': order #4710635661 sell 0.02 / 0.02 BTCUSD at 77937.45 done in 421.041 ms (ok)
+GR	0	09:19:23.658	Trades	'433929760': market sell 0.08 BTCUSD, close #4710624177 buy 0.08 BTCUSD 77973.98
+QG	0	09:19:23.691	Trades	'433929760': accepted market sell 0.08 BTCUSD, close #4710624177 buy 0.08 BTCUSD 77973.98
+PG	0	09:19:23.923	Trades	'433929760': deal #4146972011 sell 0.08 BTCUSD at 77937.45 done (based on order #4710635662)
+CK	0	09:19:23.923	Trades	'433929760': order #4710635662 sell 0.08 / 0.08 BTCUSD at 77937.45 done in 265.123 ms (ok)
+OK	0	10:06:00.160	Trades	'433929760': market sell 0.08 BTCUSD tp: 77664.68
+EO	0	10:06:00.198	Trades	'433929760': accepted market sell 0.08 BTCUSD tp: 77664.68
+CD	0	10:06:00.507	Trades	'433929760': deal #4147132754 sell 0.08 BTCUSD at 77753.74 done (based on order #4710814523)
+QJ	0	10:06:00.513	Trades	'433929760': order #4710814523 sell 0.08 / 0.08 BTCUSD at 77753.74 done in 356.338 ms (ok)
+LE	0	10:06:00.514	Trades	'433929760': market sell 0.02 BTCUSD tp: 77597.34
+JN	0	10:06:00.546	Trades	'433929760': accepted market sell 0.02 BTCUSD tp: 77597.34
+KR	0	10:06:00.878	Trades	'433929760': deal #4147132778 sell 0.02 BTCUSD at 77753.74 done (based on order #4710814564)
+NH	0	10:06:00.879	Trades	'433929760': order #4710814564 sell 0.02 / 0.02 BTCUSD at 77753.74 done in 365.274 ms (ok)
+IE	0	10:33:17.933	Trades	'433929760': market sell 0.2 BTCUSD
+CO	0	10:33:17.965	Trades	'433929760': accepted market sell 0.2 BTCUSD
+PG	0	10:33:18.178	Trades	'433929760': deal #4147207860 sell 0.2 BTCUSD at 77835.02 done (based on order #4710898627)
+QJ	0	10:33:18.178	Trades	'433929760': order #4710898627 sell 0.2 / 0.2 BTCUSD at 77835.02 done in 245.169 ms (ok)
+RH	0	10:39:51.390	Trades	'433929760': market buy 0.2 BTCUSD, close #4710898627 sell 0.2 BTCUSD 77835.02
+EI	0	10:39:51.426	Trades	'433929760': accepted market buy 0.2 BTCUSD, close #4710898627 sell 0.2 BTCUSD 77835.02
+LQ	0	10:39:51.661	Trades	'433929760': deal #4147229392 buy 0.2 BTCUSD at 77798.92 done (based on order #4710921887)
+JM	0	10:39:51.661	Trades	'433929760': order #4710921887 buy 0.2 / 0.2 BTCUSD at 77798.92 done in 271.549 ms (ok)
+QP	0	10:39:51.661	Trades	'433929760': market buy 0.02 BTCUSD, close #4710814564 sell 0.02 BTCUSD 77753.74
+RP	0	10:39:51.694	Trades	'433929760': accepted market buy 0.02 BTCUSD, close #4710814564 sell 0.02 BTCUSD 77753.74
+NJ	0	10:39:51.966	Trades	'433929760': deal #4147229405 buy 0.02 BTCUSD at 77798.92 done (based on order #4710921901)
+HF	0	10:39:51.967	Trades	'433929760': order #4710921901 buy 0.02 / 0.02 BTCUSD at 77798.92 done in 305.396 ms (ok)
+MF	0	10:39:51.967	Trades	'433929760': market buy 0.08 BTCUSD, close #4710814523 sell 0.08 BTCUSD 77753.74
+OK	0	10:39:51.999	Trades	'433929760': accepted market buy 0.08 BTCUSD, close #4710814523 sell 0.08 BTCUSD 77753.74
+KE	0	10:39:52.283	Trades	'433929760': deal #4147229418 buy 0.08 BTCUSD at 77798.92 done (based on order #4710921914)
+JO	0	10:39:52.284	Trades	'433929760': order #4710921914 buy 0.08 / 0.08 BTCUSD at 77798.92 done in 316.971 ms (ok)
+FO	0	11:40:00.584	Trades	'433929760': market sell 0.08 BTCUSD tp: 77444.37
+FD	0	11:40:00.617	Trades	'433929760': accepted market sell 0.08 BTCUSD tp: 77444.37
+DH	0	11:40:01.000	Trades	'433929760': deal #4147418615 sell 0.08 BTCUSD at 77564.93 done (based on order #4711126561)
+PF	0	11:40:01.000	Trades	'433929760': order #4711126561 sell 0.08 / 0.08 BTCUSD at 77564.93 done in 416.410 ms (ok)
+PN	0	11:40:01.001	Trades	'433929760': market sell 0.02 BTCUSD tp: 77390.09
+HR	0	11:40:01.033	Trades	'433929760': accepted market sell 0.02 BTCUSD tp: 77390.09
+EI	0	11:40:01.361	Trades	'433929760': deal #4147418641 sell 0.02 BTCUSD at 77564.93 done (based on order #4711126589)
+RE	0	11:40:01.362	Trades	'433929760': order #4711126589 sell 0.02 / 0.02 BTCUSD at 77564.93 done in 361.395 ms (ok)
+II	0	11:40:53.136	Trades	'433929760': market sell 0.2 BTCUSD
+LS	0	11:40:53.169	Trades	'433929760': accepted market sell 0.2 BTCUSD
+FK	0	11:40:53.394	Trades	'433929760': deal #4147421342 sell 0.2 BTCUSD at 77578.98 done (based on order #4711129560)
+PG	0	11:40:53.394	Trades	'433929760': order #4711129560 sell 0.2 / 0.2 BTCUSD at 77578.98 done in 258.273 ms (ok)
+CL	0	11:50:55.424	Trades	'433929760': market buy 0.2 BTCUSD, close #4711129560 sell 0.2 BTCUSD 77578.98
+CM	0	11:50:55.467	Trades	'433929760': accepted market buy 0.2 BTCUSD, close #4711129560 sell 0.2 BTCUSD 77578.98
+RL	0	11:50:55.780	Trades	'433929760': deal #4147455021 buy 0.2 BTCUSD at 77570.93 done (based on order #4711165520)
+LQ	0	11:50:55.781	Trades	'433929760': order #4711165520 buy 0.2 / 0.2 BTCUSD at 77570.93 done in 356.737 ms (ok)
+ID	0	11:50:55.781	Trades	'433929760': market buy 0.02 BTCUSD, close #4711126589 sell 0.02 BTCUSD 77564.93
+QE	0	11:50:55.814	Trades	'433929760': accepted market buy 0.02 BTCUSD, close #4711126589 sell 0.02 BTCUSD 77564.93
+JF	0	11:50:56.118	Trades	'433929760': deal #4147455028 buy 0.02 BTCUSD at 77570.93 done (based on order #4711165529)
+LJ	0	11:50:56.118	Trades	'433929760': order #4711165529 buy 0.02 / 0.02 BTCUSD at 77570.93 done in 337.695 ms (ok)
+NK	0	11:50:56.118	Trades	'433929760': market buy 0.08 BTCUSD, close #4711126561 sell 0.08 BTCUSD 77564.93
+JL	0	11:50:56.157	Trades	'433929760': accepted market buy 0.08 BTCUSD, close #4711126561 sell 0.08 BTCUSD 77564.93
+PQ	0	11:50:56.541	Trades	'433929760': deal #4147455041 buy 0.08 BTCUSD at 77566.41 done (based on order #4711165535)
+ES	0	11:50:56.541	Trades	'433929760': order #4711165535 buy 0.08 / 0.08 BTCUSD at 77566.41 done in 422.638 ms (ok)
+MP	0	12:00:00.083	Trades	'433929760': market sell 0.08 BTCUSD tp: 77498.01
+KH	0	12:00:00.123	Trades	'433929760': accepted market sell 0.08 BTCUSD tp: 77498.01
+LO	0	12:00:00.394	Trades	'433929760': deal #4147479783 sell 0.08 BTCUSD at 77547.66 done (based on order #4711192520)
+LS	0	12:00:00.395	Trades	'433929760': order #4711192520 sell 0.08 / 0.08 BTCUSD at 77547.66 done in 312.031 ms (ok)
+MR	0	12:00:00.395	Trades	'433929760': market sell 0.02 BTCUSD tp: 77463.36
+PG	0	12:00:00.427	Trades	'433929760': accepted market sell 0.02 BTCUSD tp: 77463.36
+RM	0	12:00:00.787	Trades	'433929760': deal #4147479830 sell 0.02 BTCUSD at 77547.66 done (based on order #4711192572)
+PQ	0	12:00:00.787	Trades	'433929760': order #4711192572 sell 0.02 / 0.02 BTCUSD at 77547.66 done in 391.517 ms (ok)
+PL	0	12:02:39.583	Trades	'433929760': market sell 0.2 BTCUSD
+NF	0	12:02:39.629	Trades	'433929760': accepted market sell 0.2 BTCUSD
+RL	0	12:02:39.911	Trades	'433929760': deal #4147487915 sell 0.2 BTCUSD at 77586.24 done (based on order #4711201552)
+PS	0	12:02:39.911	Trades	'433929760': order #4711201552 sell 0.2 / 0.2 BTCUSD at 77586.24 done in 328.484 ms (ok)
+DQ	0	12:09:49.205	Trades	'433929760': market buy 0.2 BTCUSD, close #4711201552 sell 0.2 BTCUSD 77586.24
+IF	0	12:09:49.236	Trades	'433929760': accepted market buy 0.2 BTCUSD, close #4711201552 sell 0.2 BTCUSD 77586.24
+QH	0	12:09:49.588	Trades	'433929760': deal #4147515493 buy 0.2 BTCUSD at 77569.27 done (based on order #4711231092)
+ID	0	12:09:49.588	Trades	'433929760': order #4711231092 buy 0.2 / 0.2 BTCUSD at 77569.27 done in 382.827 ms (ok)
+JI	0	12:09:49.588	Trades	'433929760': market buy 0.02 BTCUSD, close #4711192572 sell 0.02 BTCUSD 77547.66
+OI	0	12:09:49.621	Trades	'433929760': accepted market buy 0.02 BTCUSD, close #4711192572 sell 0.02 BTCUSD 77547.66
+QS	0	12:09:49.930	Trades	'433929760': deal #4147515532 buy 0.02 BTCUSD at 77569.27 done (based on order #4711231121)
+IM	0	12:09:49.932	Trades	'433929760': order #4711231121 buy 0.02 / 0.02 BTCUSD at 77569.27 done in 344.177 ms (ok)
+FO	0	12:09:49.932	Trades	'433929760': market buy 0.08 BTCUSD, close #4711192520 sell 0.08 BTCUSD 77547.66
+KP	0	12:09:49.985	Trades	'433929760': accepted market buy 0.08 BTCUSD, close #4711192520 sell 0.08 BTCUSD 77547.66
+OJ	0	12:09:50.278	Trades	'433929760': deal #4147515553 buy 0.08 BTCUSD at 77568.80 done (based on order #4711231149)
+FF	0	12:09:50.278	Trades	'433929760': order #4711231149 buy 0.08 / 0.08 BTCUSD at 77568.80 done in 345.484 ms (ok)
+RK	0	13:02:12.959	Network	'433929760': scanning network for access points
+MO	0	13:02:20.108	Network	'433929760': scanning network finished
+HG	0	13:59:01.339	Trades	'433929760': market sell 0.08 BTCUSD tp: 77152.72
+CK	0	13:59:01.371	Trades	'433929760': accepted market sell 0.08 BTCUSD tp: 77152.72
+KP	0	13:59:01.652	Trades	'433929760': deal #4147980306 sell 0.08 BTCUSD at 77244.49 done (based on order #4711744247)
+QN	0	13:59:01.653	Trades	'433929760': order #4711744247 sell 0.08 / 0.08 BTCUSD at 77244.49 done in 314.260 ms (ok)
+GQ	0	13:59:01.653	Trades	'433929760': market sell 0.02 BTCUSD tp: 77091.03
+GJ	0	13:59:01.687	Trades	'433929760': accepted market sell 0.02 BTCUSD tp: 77091.03
+IN	0	13:59:01.949	Trades	'433929760': deal #4147980407 sell 0.02 BTCUSD at 77244.49 done (based on order #4711744257)
+LL	0	13:59:01.949	Trades	'433929760': order #4711744257 sell 0.02 / 0.02 BTCUSD at 77244.49 done in 296.456 ms (ok)
+KL	0	14:08:39.311	Trades	'433929760': deal #4148034823 buy 0.08 BTCUSD at 77152.72 done (based on order #0)
+FI	0	14:35:00.360	Trades	'433929760': deal #4148134669 buy 0.02 BTCUSD at 77091.03 done (based on order #0)
