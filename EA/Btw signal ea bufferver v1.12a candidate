@@ -1,0 +1,1415 @@
+//+------------------------------------------------------------------+
+//| BTW_Signal_EA.mq5                                                |
+//| EA ที่อ่านสัญญาณจาก Buffer ของ Indicator "BTW v7.948"             |
+//| พร้อมระบบแก้ไม้มาร์ติงเกล (เปิด/ปิดได้ที่ Input)                  |
+//|                                                                   |
+//| เวอร์ชันนี้อ่านสัญญาณผ่าน iCustom()+CopyBuffer() โดยตรง            |
+//| (indicator ต้องเป็นเวอร์ชัน 7.948 ขึ้นไปที่มี signal buffer 8-12)  |
+//| Buffer 8  = ประเภทสัญญาณ (1=S1 Long, 2=S1 Short, 3=S2 Long, 4=S2 Short, 0=ไม่มี)|
+//| Buffer 9  = ราคา Entry                                           |
+//| Buffer 10 = ราคา SL                                              |
+//| Buffer 11 = ราคา TP1                                             |
+//| Buffer 12 = ราคา TP2                                             |
+//|                                                                   |
+//| ==== CHANGELOG v1.11 (candidate — ยังไม่ใช่ baseline) =========== |
+//| แก้ปัญหา Journal log สแปมรัวมาก (ผู้ใช้ยืนยันจาก log จริง): ทุก      |
+//| ครั้งที่ dashboard รีเฟรช (~2 วิ) โค้ดเดิมจะ Print รายละเอียด "ทุก   |
+//| deal" ของทั้งวันซ้ำหมดทุกรอบ + เช็ค "ข้ามวันใหม่แล้ว" ด้วยการเทียบ    |
+//| datetime แบบ exact equality ซึ่งสั่น ±1-2 วิได้จาก TimeLocal()/      |
+//| TimeCurrent() ที่อ่านนาฬิกาสดคนละจังหวะ ทำให้เข้าใจผิดว่าวันเปลี่ยน   |
+//| บ่อยผิดปกติ ยิ่งไปกระตุ้น debug summary ให้พิมพ์ซ้ำถี่ขึ้นไปอีก        |
+//| แก้โดย:                                                            |
+//| 1) เพิ่ม GetStableDayBoundaries(): cache ขอบเขตวันที่นิ่งแล้วไว้ใช้   |
+//|    ตลอดทั้งวัน รีเฟรช cache ก็ต่อเมื่อค่าต่างจากเดิมเกิน 1 ชั่วโมง    |
+//|    (ทนจิตเตอร์ แต่จับวันเปลี่ยนจริงได้ชัวร์) แทนที่ g_dashboardDayKey |
+//|    เดิมที่เทียบแบบ exact equality ทุกจุดที่เคยเรียก                  |
+//|    GetDayBoundaries() ตรง ๆ (OnInit, rollover check, dashboard      |
+//|    refresh) เปลี่ยนมาเรียกฟังก์ชันนี้แทนทั้งหมด                      |
+//| 2) GetRealizedProfitInRange พิมพ์เฉพาะ deal ที่ ticket ใหม่กว่าที่    |
+//|    เคยพิมพ์ไปแล้ว + พิมพ์บรรทัดสรุปรวมเฉพาะตอนยอด/จำนวน deal         |
+//|    เปลี่ยนจริงเท่านั้น ไม่พิมพ์ซ้ำบรรทัดเดิมทุก 2 วิระหว่างที่ไม่มี    |
+//|    อะไรเปลี่ยน                                                      |
+//| ไม่แตะ logic การเทรด/Pair-Close/Martingale ใด ๆ เลยในรอบนี้ ตามที่   |
+//| ตกลงกันไว้ว่าจะแก้ทีละจุดแคบ ๆ ไม่พอร์ตฟิกซ์อื่นมาพร้อมกัน            |
+//|                                                                   |
+//| *** ผู้ใช้ยืนยันแล้วว่าทดสอบผ่าน — อัปเดตเป็น BASELINE ใหม่ ***      |
+//|                                                                   |
+//| ==== CHANGELOG v1.12 (candidate — ยังไม่ใช่ baseline) =========== |
+//| แก้: กำไรที่ Pair-Close ปิดคู่ไปแล้วจริง (realized) ไม่ถูกนับตอน     |
+//| เช็คเงื่อนไขปิดทั้งชุดฉุกเฉิน (InpMartingaleCloseProfitUSD) — ของเดิม|
+//| GetBasketFloatingProfit() นับแค่ไม้ที่ยังเปิดอยู่ตอนนี้เท่านั้น       |
+//| ทำให้กำไรที่ Pair-Close ล็อกไปแล้วก่อนหน้าหายไปจากสมการ ส่งผลให้      |
+//| basket ปิดช้ากว่าที่ควร (ไม้ค้างอยู่ในตลาดนานเกินจำเป็นทั้งที่กำไร    |
+//| สุทธิจริงถึงเป้าแล้ว) แก้โดยเพิ่ม field realizedProfit ใน            |
+//| MartingaleBasket สะสมทุกครั้งที่ Pair-Close ปิดคู่สำเร็จ (บวกเข้า     |
+//| realizedProfit) แล้วรวมเข้ากับ floating profit ปัจจุบันตอนเช็ค        |
+//| เงื่อนไขปิดทั้งชุดฉุกเฉิน                                            |
+//| ยังไม่ได้แก้เรื่อง "Pair-Close ไม่เช็คผลสำเร็จของ                     |
+//| trade.PositionClose() ก่อนนับว่าปิดสำเร็จ" (เป็นอีกจุดที่ทราบว่าควร   |
+//| แก้แยกต่างหาก ตามที่ตกลงกันว่าจะแก้ทีละจุด) ไม่แตะ logic อื่นใดเลย    |
+//| =================================================================|
+//+------------------------------------------------------------------+
+#property copyright "AiSLOTH-Bankies"
+#property version   "1.12"
+#property strict
+
+// BUILD TAG: เปลี่ยนทุกครั้งที่มีการแก้ไขเนื้อหาโค้ด ใช้เทียบว่า log ที่ส่งมา
+// ตรงกับโค้ดเวอร์ชันไหนจริง ๆ (จะโชว์ใน Journal log ตอน OnInit ทุกครั้ง)
+#define EA_BUILD_TAG "2026-09-21-B12-BUFFERVER-realizedprofit-fix-CANDIDATE"
+
+#include <Trade\Trade.mqh>
+CTrade trade;
+
+// Index ของ signal buffer ใน indicator (ต้องตรงกับที่ indicator v7.948 ประกาศไว้)
+#define SIGBUF_TYPE   8
+#define SIGBUF_ENTRY  9
+#define SIGBUF_SL     10
+#define SIGBUF_TP1    11
+#define SIGBUF_TP2    12
+
+// ตัวเลือก Timeframe สำหรับ MTF EMA200 Filter (จำกัดแค่ 5 ตัวตามที่ต้องการ)
+enum ENUM_MTF_CHOICE
+  {
+   MTF_TF_M15 = 0, // M15
+   MTF_TF_M30 = 1, // M30
+   MTF_TF_H1  = 2, // H1
+   MTF_TF_H4  = 3, // H4
+   MTF_TF_D1  = 4  // D1
+  };
+
+input group    "=== Signal Source ==="
+input string   InpIndicatorName   = "BTW v794-7 - TEST"; // ชื่อไฟล์ indicator ตามที่เห็นใน Navigator (ไม่ต้องใส่ .ex5)
+
+input group    "=== Money Management ==="
+input double   InpLotTotal        = 0.10;     // Lot รวมต่อสัญญาณ (แบ่งเป็น TP1+TP2)
+input double   InpTP1Percent      = 70.0;     // % Lot สำหรับไม้ TP1
+input double   InpTP2Percent      = 30.0;     // % Lot สำหรับไม้ TP2
+
+input group    "=== MTF EMA200 Trend Filter ==="
+input bool          InpUseMTFFilter    = false;      // เปิด/ปิดตัวกรอง EMA200 จาก Timeframe ที่ใหญ่กว่า
+input ENUM_MTF_CHOICE InpMTFTimeframe  = MTF_TF_H1;   // เลือก Timeframe ที่จะใช้เช็ค EMA200
+input double        InpMTFDeadZoneUSD = 30.0;       // ระยะห่างจาก EMA ที่ถือว่า "ก้ำกึ่ง" (USD) ถ้าราคาอยู่ในโซนนี้จะไม่เปิดไม้เลยจนกว่าจะคอนเฟิมข้าง
+input bool          InpMTFBlockCandleStraddle = false; // เพิ่มเติม: บล็อกถ้าแท่งเทียน (High/Low) ของ TF นี้คาบเส้น EMA200 อยู่ (เส้นพาดผ่านลำตัว/ไส้เทียน) ไม่ว่าราคาปิดจะห่างแค่ไหนก็ตาม
+
+input group    "=== Current-TF EMA200 Trend Filter ==="
+input bool          InpUseCurrentTFFilter    = false; // เปิด/ปิดตัวกรอง EMA200 บน Timeframe ปัจจุบันที่ EA รันอยู่ (คนละตัวกับ MTF ด้านบน เปิดพร้อมกันได้ = ดับเบิ้ลเช็ค)
+input double        InpCurrentTFDeadZoneUSD = 30.0;  // ระยะห่างจาก EMA ที่ถือว่า "ก้ำกึ่ง" (USD) สำหรับ Timeframe ปัจจุบัน (แยกค่าจาก MTF ด้านบน)
+input bool          InpCurrentTFBlockCandleStraddle = false; // เพิ่มเติม: บล็อกถ้าแท่งเทียนของ Timeframe ปัจจุบันคาบเส้น EMA200 อยู่
+
+input group    "=== Order Management ==="
+input int      InpMagic           = 20260831; // Magic Number คุมทุกออเดอร์ที่ EA นี้เปิด
+input int      InpSlippage        = 20;       // Slippage (points)
+input string   InpOrderComment    = "BTW-Signal"; // Comment ของออเดอร์ (แสดงต่อจาก Basket ID)
+input int      InpMaxConcurrentBaskets = 0;    // จำนวนชุด(สัญญาณ)ที่เปิดพร้อมกันได้สูงสุด (0 = ไม่จำกัด) เช่น 1 = ต้องรอชุดเดิมปิดหมดก่อนถึงเปิดสัญญาณใหม่ได้
+
+input group    "=== Trading Days (วันที่อนุญาตให้เปิดไม้แรก, เวลาไทย) ==="
+input bool     InpTradeMon = true; // จันทร์
+input bool     InpTradeTue = true; // อังคาร
+input bool     InpTradeWed = true; // พุธ
+input bool     InpTradeThu = true; // พฤหัสบดี
+input bool     InpTradeFri = true; // ศุกร์
+input bool     InpTradeSat = true; // เสาร์
+input bool     InpTradeSun = true; // อาทิตย์
+
+input group    "=== Break Time (หยุดเปิดไม้แรกชั่วคราว, เวลาไทย, รองรับข้ามเที่ยงคืน) ==="
+input bool     InpBreak1Enabled = false; input string InpBreak1Start = "11:00"; input string InpBreak1End = "12:00";
+input bool     InpBreak2Enabled = false; input string InpBreak2Start = "00:00"; input string InpBreak2End = "00:00";
+input bool     InpBreak3Enabled = false; input string InpBreak3Start = "00:00"; input string InpBreak3End = "00:00";
+input bool     InpBreak4Enabled = false; input string InpBreak4Start = "00:00"; input string InpBreak4End = "00:00";
+input bool     InpBreak5Enabled = false; input string InpBreak5Start = "00:00"; input string InpBreak5End = "00:00";
+
+input group    "=== Martingale Recovery (แก้ไม้) ==="
+input bool     InpMartingaleEnabled     = false;                // เปิด/ปิดระบบแก้ไม้มาร์ติงเกล
+input string   InpMartingaleMultipliers = "1.0,1.5,2.0,2.5,3.0"; // เท่าของ Lot รวมเดิม แต่ละชั้น (คั่นด้วย , ชั้นที่ 1 อยู่ซ้ายสุด) ถ้าใส่ตัวเดียวจะใช้ค่านั้นซ้ำทุกชั้น
+input int      InpMartingaleMaxLevels   = 5;                     // จำนวนชั้นสูงสุดที่จะแก้ไม้ (safety cap กันแก้ไม่มีที่สิ้นสุด)
+input double   InpMartingaleGapUSD      = 20.0;                  // ระยะห่างราคาระหว่างไม้แก้แต่ละชั้น หน่วย USD (ใส่เองได้อิสระ ใช้ค่าเดียวกันทุกชั้น)
+input double   InpMartingaleCloseProfitUSD = 1.0;                // ปิดกำไรด่วนทั้งชุด เมื่อกำไรลอยรวมของชุดที่ถูกแก้ไม้ >= ค่านี้ (USD)
+
+input group    "=== Pair-Close Recovery (จับคู่ปิด: ไม้เก่าสุด+ไม้ใหม่สุด) ==="
+input bool     InpPairCloseEnabled      = false; // เปิด/ปิดระบบจับคู่ปิด (ทำงานแยกจากระบบปิดทั้งชุดด้านบน อิสระต่อกัน)
+input int      InpPairCloseStartLevel   = 2;     // เริ่มจับคู่ปิดก็ต่อเมื่อ basket มีไม้แก้เปิดไปแล้วอย่างน้อยกี่ชั้น (gridLevel >= ค่านี้)
+input double   InpPairCloseProfitUSD    = 1.0;   // กำไรขั้นต่ำของคู่ (ไม้เก่าสุด+ไม้ใหม่สุดที่เปิดอยู่) ที่จะสั่งปิดคู่ทันที (USD)
+
+input group    "=== Daily Dashboard ==="
+input bool     InpShowDailyDashboard = true;  // แสดงสรุปผลรวมประจำวันบนกราฟ
+input bool     InpUseThaiTime        = true;  // นับ "วัน" แบบเวลาไทย (เทียบจากเวลาเครื่องอัตโนมัติ) ถ้าปิดจะใช้เวลา server แทน
+input bool     InpDebugDashboard     = true;  // พิมพ์รายละเอียดขอบเขตเวลา/deal ที่นับได้ลง Journal (ใช้ดีบักเมื่อยอดไม่ตรง ปิดได้ทีหลัง)
+
+//--- internal state: สัญญาณ
+datetime g_lastCheckedBarTime = 0; // เวลาแท่งปัจจุบัน (shift=0) ที่เช็คล่าสุด ใช้ตรวจจับ "เข้าแท่งใหม่"
+int      g_indiHandle = INVALID_HANDLE;
+int      g_mtfEmaHandle = INVALID_HANDLE; // handle ของ EMA200 บน Timeframe ที่เลือกไว้สำหรับตัวกรอง MTF
+int      g_currentTfEmaHandle = INVALID_HANDLE; // handle ของ EMA200 บน Timeframe ปัจจุบันที่ EA รันอยู่
+
+//--- internal state: Daily Dashboard
+//--- internal state: มาร์ติงเกล
+struct MartingaleBasket
+  {
+   bool     active;
+   bool     isBuy;
+   string   basketId;         // = timestamp ของแท่งสัญญาณ ใช้จับกลุ่มออเดอร์ผ่าน comment
+   double   slPrice;          // ราคาที่ไม้แก้ชั้น 1 จะเปิด (= SL เดิมของสัญญาณ)
+   double   baseLot;          // Lot รวมของสัญญาณเดิม ใช้คูณกับ multiplier แต่ละชั้น
+   int      gridLevel;        // จำนวนไม้แก้ที่เปิดไปแล้วในชุดนี้ (0 = ยังไม่แก้เลย)
+   double   nextTriggerPrice; // ราคาที่ไม้แก้ชั้นถัดไปจะเปิด
+
+   // v1.12 (candidate): กำไรที่ Pair-Close ปิดคู่ไปแล้วจริง (realized) สะสมของ
+   // basket นี้ — ใช้รวมกับ floating profit ปัจจุบันตอนเช็คเงื่อนไขปิดทั้งชุดฉุกเฉิน
+   // (InpMartingaleCloseProfitUSD) เดิม GetBasketFloatingProfit() นับแค่ไม้ที่ยัง
+   // เปิดอยู่ตอนนี้เท่านั้น ทำให้กำไรที่ Pair-Close ล็อกไปแล้วก่อนหน้าหายไปจากสมการ
+   // ส่งผลให้ basket ปิดช้ากว่าที่ควร (ไม้ค้างในตลาดนานเกินจำเป็นทั้งที่กำไรสุทธิ
+   // จริงถึงเป้าแล้ว)
+   double   realizedProfit;
+  };
+
+MartingaleBasket g_baskets[];
+double g_mtgMultipliers[];
+
+//--- internal state: Daily Dashboard
+#define DASH_OBJ_NAME "BTW_EA_Dashboard"
+#define DASH_BG_NAME  "BTW_EA_Dashboard_BG"
+
+// v1.11 (candidate): เดิมเก็บแค่ dayStart ล่าสุดไว้เทียบแบบ exact equality (datetime !=
+// datetime) ปัญหาคือ GetDayBoundaries() (โหมด Thai Time) คำนวณจาก TimeLocal() กับ
+// TimeCurrent() ซึ่งเป็นการอ่านนาฬิกาสด "สองครั้งคนละจังหวะ" (ห่างกันแค่เสี้ยววินาที)
+// ทำให้ค่าที่ได้อาจสั่น ±1-2 วินาทีระหว่างรอบถัดไปแม้เป็นวันเดียวกันจริง ถ้าเทียบแบบ
+// exact equality จะเข้าใจผิดว่า "วันเปลี่ยน" ทุกครั้งที่สั่น ทำให้ log "ข้ามวันใหม่แล้ว"
+// และ debug summary สแปมถี่ผิดปกติ (พิสูจน์แล้วจาก log จริงที่ผู้ใช้ส่งมา) แก้โดยเปลี่ยน
+// มา "cache" ขอบเขตวันที่นิ่งแล้วไว้ใช้ตลอดทั้งวัน แล้วรีเฟรช cache ก็ต่อเมื่อค่าที่
+// คำนวณสดต่างจาก cache เกิน tolerance (ใหญ่กว่าจิตเตอร์มาก แต่เล็กกว่าการข้ามวันจริง
+// 86400 วิมาก ๆ) เท่านั้น — ดู GetStableDayBoundaries() ซึ่งเป็นจุดเดียวที่อ่าน/เขียน
+// ตัวแปรนี้ (แทนที่ g_dashboardDayKey เดิม)
+datetime g_cachedDayStart      = 0;
+datetime g_cachedDayEnd        = 0;
+uint     g_lastDashboardUpdate = 0;
+
+// v1.11 (candidate): ตัวตามรอยสำหรับลด spam ของ InpDebugDashboard — ปัญหาเดิม: ทุก
+// ครั้งที่ dashboard รีเฟรช (~2 วิ) จะ Print รายละเอียด "ทุก deal" ของทั้งวันซ้ำหมด
+// ทุกรอบ ยิ่งวันผ่านไปยิ่งมี deal สะสมมาก ยิ่ง Print รัวขึ้นเรื่อย ๆ (โต O(จำนวน deal)
+// ทุก 2 วินาที — ตรงกับที่เห็นใน log จริง) แก้เป็น: พิมพ์รายละเอียดเฉพาะ deal ที่
+// "ใหม่" (ticket มากกว่าที่เคยพิมพ์ไปแล้ว) และพิมพ์สรุปรวมเฉพาะตอนยอด/จำนวน deal
+// เปลี่ยนจากครั้งก่อนจริง ๆ เท่านั้น
+ulong    g_debugLastPrintedTicket = 0;    // ticket สูงสุดที่เคย Print รายละเอียดไปแล้ว
+double   g_debugLastRealizedSum   = 0.0;  // ยอดรวมล่าสุดที่เคย Print สรุปไปแล้ว
+int      g_debugLastMatchedCount  = -1;   // จำนวน deal ล่าสุดที่เคย Print สรุปไปแล้ว (-1 = ยังไม่เคยพิมพ์)
+
+//+------------------------------------------------------------------+
+int OnInit()
+  {
+   trade.SetExpertMagicNumber(InpMagic);
+   trade.SetDeviationInPoints(InpSlippage);
+
+   // สำคัญ: เรียก iCustom เพื่อ "บังคับ" ให้ indicator ถูกโหลดและคำนวณ
+   // แม้จะไม่ได้อ่านค่าจาก buffer ของมันเลยก็ตาม เพราะ indicator วาด
+   // signal object (ลูกศร BUY/SELL) ของมันเองในฟังก์ชัน OnCalculate()
+   // ถ้าไม่เรียกบรรทัดนี้ EA จะต้องพึ่งการลาก indicator วางบนกราฟด้วยมือ
+   // เท่านั้น (ใช้ได้บนกราฟจริง แต่ Strategy Tester โหมดปกติจะไม่รัน
+   // indicator ที่ไม่ได้ถูกเรียกจากโค้ด EA ให้ ทำให้ backtest ไม่มีสัญญาณ)
+   g_indiHandle = iCustom(_Symbol, _Period, InpIndicatorName);
+   if(g_indiHandle == INVALID_HANDLE)
+     {
+      Print("ไม่สามารถโหลด indicator ได้: ", InpIndicatorName,
+            " (เช็คว่าชื่อตรงกับใน Navigator และ compile ไว้ในโฟลเดอร์ Indicators แล้ว)");
+      return(INIT_FAILED);
+     }
+
+   // parse ค่า multiplier ของระบบมาร์ติงเกลจาก input string (ระยะห่างราคาใช้ InpMartingaleGapUSD ค่าเดียวตรง ๆ)
+   ParseDoubleList(InpMartingaleMultipliers, g_mtgMultipliers);
+   ArrayResize(g_baskets, 0);
+
+   // สำคัญ: รอให้ indicator คำนวณ "ครบ" ก่อนสแกนหา baseline
+   // เพราะ iCustom() แค่สร้าง handle แต่การคำนวณจริงเกิดแบบ async เบื้องหลัง
+   // ถ้าสแกนหา baseline ก่อนคำนวณเสร็จ อาจได้ค่าว่าง แล้วพอลูกศรเก่าโผล่มา
+   // ทีหลัง (ตอน indicator คำนวณย้อนหลังเสร็จ) EA จะเข้าใจผิดว่าเป็นสัญญาณใหม่
+   int totalBarsExpected = iBars(_Symbol, _Period);
+   uint waitStart = GetTickCount();
+   while(BarsCalculated(g_indiHandle) < totalBarsExpected && (GetTickCount() - waitStart) < 15000)
+     {
+      double warm[1];
+      CopyBuffer(g_indiHandle, 0, 0, 1, warm);
+      Sleep(200);
+     }
+   Print("BTW_Signal_EA: indicator calculated ", BarsCalculated(g_indiHandle), "/", totalBarsExpected, " bars ก่อนเริ่มทำงาน");
+
+   // ตั้ง baseline: จำเวลาแท่งปัจจุบัน (ที่ยังไม่ปิด) ไว้เป็นจุดเริ่มต้น
+   // เพื่อไม่ให้ EA ยิงออเดอร์ตามสัญญาณที่อยู่บนแท่งที่ปิดไปแล้วก่อนหน้านี้
+   // (จะเริ่มเช็คสัญญาณก็ต่อเมื่อแท่งถัดจากนี้ปิดจริง ๆ เท่านั้น)
+   g_lastCheckedBarTime = iTime(_Symbol, _Period, 0);
+
+   // สร้าง handle EMA200 บน Timeframe ที่เลือกไว้สำหรับตัวกรอง MTF (สร้างไว้เสมอ
+   // แม้จะยังไม่เปิดใช้ InpUseMTFFilter เพื่อให้พร้อมทันทีถ้าสลับเปิดทีหลัง)
+   g_mtfEmaHandle = iMA(_Symbol, MapMTFTimeframe(InpMTFTimeframe), 200, 0, MODE_EMA, PRICE_CLOSE);
+   if(g_mtfEmaHandle == INVALID_HANDLE)
+     {
+      Print("BTW_Signal_EA: ไม่สามารถสร้าง EMA200 handle สำหรับ MTF filter ได้ (err=", GetLastError(), ")");
+      // ไม่ต้อง INIT_FAILED เพราะ EA ยังใช้งานได้ปกติถ้าปิด InpUseMTFFilter ไว้
+     }
+
+   // สร้าง handle EMA200 บน Timeframe ปัจจุบัน (_Period) สำหรับตัวกรองตัวที่สอง
+   // เป็นคนละ handle กับ MTF ด้านบน เปิดพร้อมกันได้ทั้งคู่ (ดับเบิ้ลเช็ค)
+   g_currentTfEmaHandle = iMA(_Symbol, _Period, 200, 0, MODE_EMA, PRICE_CLOSE);
+   if(g_currentTfEmaHandle == INVALID_HANDLE)
+     {
+      Print("BTW_Signal_EA: ไม่สามารถสร้าง EMA200 handle สำหรับ Current-TF filter ได้ (err=", GetLastError(), ")");
+     }
+
+   Print("BTW_Signal_EA initialized. BUILD=", EA_BUILD_TAG,
+         " Magic=", InpMagic,
+         " Baseline bar=", TimeToString(g_lastCheckedBarTime, TIME_DATE|TIME_MINUTES),
+         " Martingale=", (InpMartingaleEnabled ? "ON" : "OFF"),
+         " MaxLevels=", InpMartingaleMaxLevels,
+         " MultiplierListLen=", ArraySize(g_mtgMultipliers),
+         " MTFFilter=", (InpUseMTFFilter ? "ON" : "OFF"),
+         " CurrentTFFilter=", (InpUseCurrentTFFilter ? "ON" : "OFF"));
+
+   // ตั้งค่าเริ่มต้นของ Daily Dashboard: log ขอบเขต "วันนี้" ที่ EA คำนวณได้ตอนเริ่มทำงาน
+   // (ช่วยยืนยันว่า EA คำนวณวันถูกต้องไหม โดยเฉพาะตอนปิด-เปิด EA ใหม่กลางวัน)
+   // หมายเหตุ: P/L และ Signals ไม่ได้เก็บสะสมในหน่วยความจำเลย ทุกครั้งที่ dashboard
+   // รีเฟรช (ทุก ~2 วิ) จะ query จาก History ของ broker สดใหม่ตามขอบเขตวันที่คำนวณ
+   // ณ ขณะนั้นเสมอ จึงรีเป็น 0 เองอัตโนมัติตอนข้ามวัน และแสดงค่าถูกต้องได้ทันที
+   // แม้จะเพิ่งปิด-เปิด EA ใหม่ ไม่ต้องมีการ "รีเซ็ต" ใด ๆ เพราะไม่มีอะไรให้รีเซ็ต
+   datetime dashDayStart, dashDayEnd;
+   // v1.11 (candidate): ใช้ GetStableDayBoundaries() เพื่อให้ค่าที่ cache ไว้ตั้งแต่
+   // OnInit ตรงกับค่าที่ CheckDailyCounterRollover/UpdateDailyDashboard จะใช้ต่อไปทุกจุด
+   GetStableDayBoundaries(dashDayStart, dashDayEnd);
+   Print("BTW_Signal_EA: ขอบเขตวันนี้ (สำหรับ Dashboard) = ",
+         TimeToString(dashDayStart, TIME_DATE|TIME_MINUTES), " ถึง ",
+         TimeToString(dashDayEnd, TIME_DATE|TIME_MINUTES), " (server time)");
+
+   return(INIT_SUCCEEDED);
+  }
+
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+  {
+   if(g_indiHandle != INVALID_HANDLE)
+      IndicatorRelease(g_indiHandle);
+   if(g_mtfEmaHandle != INVALID_HANDLE)
+      IndicatorRelease(g_mtfEmaHandle);
+   if(g_currentTfEmaHandle != INVALID_HANDLE)
+      IndicatorRelease(g_currentTfEmaHandle);
+
+   ObjectDelete(0, DASH_BG_NAME);
+   for(int i = 0; i < 6; i++)
+      ObjectDelete(0, DASH_OBJ_NAME + "_L" + IntegerToString(i));
+  }
+
+//+------------------------------------------------------------------+
+void OnTick()
+  {
+   // สำคัญ: indicator ที่โหลดผ่าน iCustom จะ "คำนวณใหม่" ก็ต่อเมื่อมีการ
+   // ขอข้อมูลจากมันเท่านั้น (pull-based) การเรียก CopyBuffer แม้จะทิ้งค่า
+   // ที่ได้ ก็เป็นการบังคับให้ indicator รัน OnCalculate() ของมันเอง
+   double dummy[1];
+   CopyBuffer(g_indiHandle, 0, 0, 1, dummy);
+
+   // อัปเดตสถานะ basket ที่ยังเปิดอยู่เสมอ (ใช้จำกัดจำนวนชุดพร้อมกัน)
+   // ต้องรันก่อน ManageMartingale และไม่ว่าจะเปิดมาร์ติงเกลหรือไม่ก็ตาม
+   UpdateBasketLifecycle();
+
+   // จัดการระบบมาร์ติงเกลทุก tick (ไม่ว่าจะมีสัญญาณใหม่หรือไม่)
+   ManageMartingale();
+
+   // จัดการระบบจับคู่ปิด (Pair-Close) แยกอิสระจากมาร์ติงเกลด้านบนโดยสิ้นเชิง
+   ManagePairClose();
+
+   // อัปเดต Daily Dashboard (เช็ค rollover วันใหม่ + วาดสรุปผลบนกราฟ)
+   CheckDailyCounterRollover();
+   UpdateDailyDashboard();
+
+   // ตรวจจับ "เข้าแท่งใหม่": เช็คสัญญาณก็ต่อเมื่อเปลี่ยนแท่งเท่านั้น (ไม่เช็คซ้ำทุก tick)
+   datetime currentBarOpenTime = iTime(_Symbol, _Period, 0);
+   if(currentBarOpenTime == g_lastCheckedBarTime)
+      return; // ยังอยู่แท่งเดิม ยังไม่มีแท่งใหม่ปิด ไม่ต้องเช็คสัญญาณ
+
+   g_lastCheckedBarTime = currentBarOpenTime;
+
+   // แท่งก่อนหน้า (shift=1) เพิ่งปิดสมบูรณ์แล้ว ณ จุดนี้ อ่านค่า buffer ที่ shift=1
+   // (ไม่เคยอ่านที่ shift=0 เลย เพราะแท่งกำลังวิ่งอาจยังไม่นิ่ง/repaint ได้)
+   double sigTypeBuf[1], entryBuf[1], slBuf[1], tp1Buf[1], tp2Buf[1];
+   if(CopyBuffer(g_indiHandle, SIGBUF_TYPE,  1, 1, sigTypeBuf) <= 0) return;
+   if(CopyBuffer(g_indiHandle, SIGBUF_ENTRY, 1, 1, entryBuf)   <= 0) return;
+   if(CopyBuffer(g_indiHandle, SIGBUF_SL,    1, 1, slBuf)      <= 0) return;
+   if(CopyBuffer(g_indiHandle, SIGBUF_TP1,   1, 1, tp1Buf)     <= 0) return;
+   if(CopyBuffer(g_indiHandle, SIGBUF_TP2,   1, 1, tp2Buf)     <= 0) return;
+
+   int sigType = (int)MathRound(sigTypeBuf[0]);
+   if(sigType == 0)
+      return; // แท่งที่เพิ่งปิดไม่มีสัญญาณ
+
+   bool isBuy  = (sigType == 1 || sigType == 3);
+   bool isSell = (sigType == 2 || sigType == 4);
+   if(!isBuy && !isSell)
+     {
+      Print("BTW_Signal_EA: buffer type ไม่ตรง Buy/Sell (", sigType, ") ข้ามแท่งนี้");
+      return;
+     }
+
+   datetime signalBarTime = iTime(_Symbol, _Period, 1);
+   ProcessSignal(isBuy, entryBuf[0], slBuf[0], tp1Buf[0], tp2Buf[0], signalBarTime);
+  }
+
+//+------------------------------------------------------------------+
+//| Tag สั้น ๆ ระบุกราฟที่ EA รันอยู่ (Symbol+Timeframe) ใช้ผูกกับ     |
+//| Basket ID กันไม่ให้กราฟคนละ Timeframe ที่มี "เวลาแท่งตรงกันพอดี"   |
+//| (เช่น M1 กับ M5 ที่นาทีลงตัว) ถูกนับรวมเป็น basket เดียวกันผิด ๆ    |
+//+------------------------------------------------------------------+
+string GetChartTag()
+  {
+   return StringSubstr(_Symbol, 0, 3) + IntegerToString((int)_Period);
+  }
+
+//+------------------------------------------------------------------+
+//| แปลงตัวเลือกจาก enum ที่จำกัดไว้ (5 ตัว) ไปเป็น ENUM_TIMEFRAMES จริง|
+//+------------------------------------------------------------------+
+ENUM_TIMEFRAMES MapMTFTimeframe(ENUM_MTF_CHOICE choice)
+  {
+   switch(choice)
+     {
+      case MTF_TF_M15: return PERIOD_M15;
+      case MTF_TF_M30: return PERIOD_M30;
+      case MTF_TF_H1:  return PERIOD_H1;
+      case MTF_TF_H4:  return PERIOD_H4;
+      case MTF_TF_D1:  return PERIOD_D1;
+     }
+   return PERIOD_H1;
+  }
+
+//+------------------------------------------------------------------+
+//| เช็คตัวกรอง MTF EMA200: อนุญาตให้เปิดออเดอร์ตามทิศทางที่ตรงกับ     |
+//| ตำแหน่งราคาเทียบ EMA200 ของ Timeframe ที่ใหญ่กว่าเท่านั้น          |
+//| - ราคาอยู่เหนือ EMA (เกิน dead zone) -> อนุญาตเฉพาะ Buy            |
+//| - ราคาอยู่ใต้ EMA (เกิน dead zone)   -> อนุญาตเฉพาะ Sell           |
+//| - ราคาอยู่ในโซนก้ำกึ่ง (ใกล้ EMA ไม่เกิน dead zone)  -> บล็อกทั้งคู่ |
+//+------------------------------------------------------------------+
+bool CheckMTFTrendFilter(bool isBuySignal)
+  {
+   if(!InpUseMTFFilter)
+      return true; // ไม่ได้เปิดใช้ตัวกรอง ปล่อยผ่านทุกสัญญาณ
+
+   if(g_mtfEmaHandle == INVALID_HANDLE)
+     {
+      Print("BTW_Signal_EA: MTF filter เปิดใช้อยู่แต่ EMA handle ใช้ไม่ได้ ข้ามสัญญาณนี้ไว้ก่อนเพื่อความปลอดภัย");
+      return false;
+     }
+
+   double emaBuf[1];
+   // อ่านที่ shift=1 ของ Timeframe ใหญ่ (แท่งปิดแล้ว) กันปัญหา repaint ของแท่งที่ยังไม่ปิด
+   if(CopyBuffer(g_mtfEmaHandle, 0, 1, 1, emaBuf) <= 0)
+     {
+      Print("BTW_Signal_EA: อ่านค่า EMA200 MTF ไม่ได้ ข้ามสัญญาณนี้ไว้ก่อนเพื่อความปลอดภัย");
+      return false;
+     }
+
+   double ema = emaBuf[0];
+
+   // เช็คเพิ่มเติม (ถ้าเปิดใช้): แท่งเทียนของ TF นี้ "คาบเส้น" EMA200 อยู่หรือไม่
+   // (High >= EMA และ Low <= EMA แปลว่าเส้นพาดผ่านลำตัว/ไส้เทียนพอดี) ถ้าใช่ บล็อกทันที
+   // ไม่ว่าราคาปิดจะห่างจากเส้นแค่ไหนก็ตาม เพราะถือว่าแท่งนั้นยังไม่ชัดเจนพอ
+   if(InpMTFBlockCandleStraddle)
+     {
+      ENUM_TIMEFRAMES mtfTf = MapMTFTimeframe(InpMTFTimeframe);
+      double high1 = iHigh(_Symbol, mtfTf, 1);
+      double low1  = iLow(_Symbol, mtfTf, 1);
+      if(high1 >= ema && low1 <= ema)
+        {
+         Print("BTW_Signal_EA: แท่งเทียน MTF คาบเส้น EMA200 อยู่ (High=", high1, " Low=", low1, " EMA=", ema, ") ข้ามสัญญาณนี้");
+         return false;
+        }
+     }
+
+   double currentPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double diff = currentPrice - ema;
+
+   if(MathAbs(diff) <= InpMTFDeadZoneUSD)
+     {
+      Print("BTW_Signal_EA: ราคาอยู่ในโซนก้ำกึ่งของ EMA200 MTF (diff=", DoubleToString(diff, 2),
+            " deadzone=", InpMTFDeadZoneUSD, ") รอคอนเฟิมทิศทางก่อน ข้ามสัญญาณนี้");
+      return false;
+     }
+
+   bool aboveEma = (diff > 0);
+   if(aboveEma && !isBuySignal)
+     {
+      Print("BTW_Signal_EA: MTF filter บล็อกสัญญาณ Sell เพราะราคาอยู่เหนือ EMA200 MTF (diff=", DoubleToString(diff, 2), ")");
+      return false;
+     }
+   if(!aboveEma && isBuySignal)
+     {
+      Print("BTW_Signal_EA: MTF filter บล็อกสัญญาณ Buy เพราะราคาอยู่ใต้ EMA200 MTF (diff=", DoubleToString(diff, 2), ")");
+      return false;
+     }
+
+   return true; // ทิศทางตรงกับแนวโน้ม MTF อนุญาตให้เปิดได้
+  }
+
+//+------------------------------------------------------------------+
+//| เช็คตัวกรอง EMA200 บน Timeframe ปัจจุบัน (หลักการเดียวกับ MTF      |
+//| ทุกอย่าง แต่ใช้ Timeframe เดียวกับที่ EA รันอยู่ ไม่ใช่ TF ที่ใหญ่กว่า)|
+//+------------------------------------------------------------------+
+bool CheckCurrentTFTrendFilter(bool isBuySignal)
+  {
+   if(!InpUseCurrentTFFilter)
+      return true; // ไม่ได้เปิดใช้ตัวกรองนี้ ปล่อยผ่าน
+
+   if(g_currentTfEmaHandle == INVALID_HANDLE)
+     {
+      Print("BTW_Signal_EA: Current-TF filter เปิดใช้อยู่แต่ EMA handle ใช้ไม่ได้ ข้ามสัญญาณนี้ไว้ก่อนเพื่อความปลอดภัย");
+      return false;
+     }
+
+   double emaBuf[1];
+   // อ่านที่ shift=1 ของ Timeframe ปัจจุบัน (แท่งปิดแล้ว) กันปัญหา repaint เช่นเดียวกับ MTF
+   if(CopyBuffer(g_currentTfEmaHandle, 0, 1, 1, emaBuf) <= 0)
+     {
+      Print("BTW_Signal_EA: อ่านค่า EMA200 Current-TF ไม่ได้ ข้ามสัญญาณนี้ไว้ก่อนเพื่อความปลอดภัย");
+      return false;
+     }
+
+   double ema = emaBuf[0];
+
+   // เช็คเพิ่มเติม (ถ้าเปิดใช้): แท่งเทียนของ Timeframe ปัจจุบัน "คาบเส้น" EMA200 อยู่หรือไม่
+   if(InpCurrentTFBlockCandleStraddle)
+     {
+      double high1 = iHigh(_Symbol, _Period, 1);
+      double low1  = iLow(_Symbol, _Period, 1);
+      if(high1 >= ema && low1 <= ema)
+        {
+         Print("BTW_Signal_EA: แท่งเทียน Current-TF คาบเส้น EMA200 อยู่ (High=", high1, " Low=", low1, " EMA=", ema, ") ข้ามสัญญาณนี้");
+         return false;
+        }
+     }
+
+   double currentPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double diff = currentPrice - ema;
+
+   if(MathAbs(diff) <= InpCurrentTFDeadZoneUSD)
+     {
+      Print("BTW_Signal_EA: ราคาอยู่ในโซนก้ำกึ่งของ EMA200 Current-TF (diff=", DoubleToString(diff, 2),
+            " deadzone=", InpCurrentTFDeadZoneUSD, ") รอคอนเฟิมทิศทางก่อน ข้ามสัญญาณนี้");
+      return false;
+     }
+
+   bool aboveEma = (diff > 0);
+   if(aboveEma && !isBuySignal)
+     {
+      Print("BTW_Signal_EA: Current-TF filter บล็อกสัญญาณ Sell เพราะราคาอยู่เหนือ EMA200 Current-TF (diff=", DoubleToString(diff, 2), ")");
+      return false;
+     }
+   if(!aboveEma && isBuySignal)
+     {
+      Print("BTW_Signal_EA: Current-TF filter บล็อกสัญญาณ Buy เพราะราคาอยู่ใต้ EMA200 Current-TF (diff=", DoubleToString(diff, 2), ")");
+      return false;
+     }
+
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+//| แปลงข้อความเวลา "HH:MM" เป็นจำนวนนาทีนับจากเที่ยงคืน (0-1439)     |
+//| คืนค่า -1 ถ้ารูปแบบผิดหรือค่าไม่สมเหตุสมผล                        |
+//+------------------------------------------------------------------+
+int ParseHHMM(const string s)
+  {
+   string parts[];
+   int n = StringSplit(s, ':', parts);
+   if(n < 2) return -1;
+   int h = (int)StringToInteger(parts[0]);
+   int m = (int)StringToInteger(parts[1]);
+   if(h < 0 || h > 23 || m < 0 || m > 59) return -1;
+   return h * 60 + m;
+  }
+
+//+------------------------------------------------------------------+
+//| เช็คว่า "วันนี้" (ตามเวลาเครื่อง สมมติตั้งเป็นเวลาไทยแล้ว) อนุญาตให้ |
+//| เปิดไม้แรกตามสัญญาณหรือไม่ (ไม่กระทบการบริหารไม้เก่าที่เปิดค้างอยู่) |
+//+------------------------------------------------------------------+
+bool IsTradingDayAllowed()
+  {
+   MqlDateTime dt;
+   TimeToStruct(TimeLocal(), dt);
+
+   switch(dt.day_of_week)
+     {
+      case 0: return InpTradeSun;
+      case 1: return InpTradeMon;
+      case 2: return InpTradeTue;
+      case 3: return InpTradeWed;
+      case 4: return InpTradeThu;
+      case 5: return InpTradeFri;
+      case 6: return InpTradeSat;
+     }
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+//| เช็คว่าเวลาปัจจุบัน (เวลาเครื่อง สมมติตั้งเป็นเวลาไทยแล้ว) อยู่ใน   |
+//| ช่วง Break Time ที่ตั้งไว้ (ทั้ง 5 ช่วง) หรือไม่ รองรับช่วงข้าม      |
+//| เที่ยงคืน (เช่น 23:00-01:00) โดยเช็คจาก start > end                |
+//+------------------------------------------------------------------+
+bool IsBreakTimeNow()
+  {
+   MqlDateTime dt;
+   TimeToStruct(TimeLocal(), dt);
+   int nowMinutes = dt.hour * 60 + dt.min;
+
+   bool    enabledArr[5];
+   string  startArr[5];
+   string  endArr[5];
+
+   enabledArr[0] = InpBreak1Enabled; startArr[0] = InpBreak1Start; endArr[0] = InpBreak1End;
+   enabledArr[1] = InpBreak2Enabled; startArr[1] = InpBreak2Start; endArr[1] = InpBreak2End;
+   enabledArr[2] = InpBreak3Enabled; startArr[2] = InpBreak3Start; endArr[2] = InpBreak3End;
+   enabledArr[3] = InpBreak4Enabled; startArr[3] = InpBreak4Start; endArr[3] = InpBreak4End;
+   enabledArr[4] = InpBreak5Enabled; startArr[4] = InpBreak5Start; endArr[4] = InpBreak5End;
+
+   for(int i = 0; i < 5; i++)
+     {
+      if(!enabledArr[i])
+         continue;
+
+      int startM = ParseHHMM(startArr[i]);
+      int endM   = ParseHHMM(endArr[i]);
+      if(startM < 0 || endM < 0)
+        {
+         Print("BTW_Signal_EA: Break Time ช่อง ", (i + 1), " รูปแบบเวลาไม่ถูกต้อง (", startArr[i], "-", endArr[i], ") ข้ามช่องนี้ไป");
+         continue;
+        }
+
+      bool inRange;
+      if(startM <= endM)
+         inRange = (nowMinutes >= startM && nowMinutes < endM); // ช่วงปกติ ในวันเดียวกัน
+      else
+         inRange = (nowMinutes >= startM || nowMinutes < endM); // ช่วงข้ามเที่ยงคืน
+
+      if(inRange)
+         return true;
+     }
+   return false;
+  }
+
+//+------------------------------------------------------------------+
+//| เปิดออเดอร์ตามสัญญาณที่อ่านได้จาก buffer                          |
+//+------------------------------------------------------------------+
+void ProcessSignal(bool isBuy, double entry, double sl, double tp1, double tp2, datetime signalBarTime)
+  {
+   // เช็คตารางเวลาเทรดก่อนเสมอ (วันหยุด + Break Time) — ถ้าไม่ผ่านข้อใดข้อหนึ่ง
+   // ข้ามสัญญาณนี้ทันที ไม่เปิดไม้แรกใหม่เลย (ไม้เก่าที่เปิดค้างอยู่ยังบริหารต่อปกติ
+   // ผ่าน ManageMartingale/ManagePairClose ซึ่งไม่ได้เช็คเงื่อนไขนี้เลย)
+   if(!IsTradingDayAllowed())
+     {
+      Print("BTW_Signal_EA: วันนี้ตั้งไว้เป็นวันหยุดเทรด ข้ามสัญญาณนี้ (ไม่กระทบไม้เก่าที่เปิดค้างอยู่)");
+      return;
+     }
+   if(IsBreakTimeNow())
+     {
+      Print("BTW_Signal_EA: อยู่ในช่วง Break Time ข้ามสัญญาณนี้ (ไม่กระทบไม้เก่าที่เปิดค้างอยู่)");
+      return;
+     }
+
+   // เช็คตัวกรอง MTF EMA200 ก่อนเสมอ (ถ้าเปิดใช้งาน) ถ้าทิศทางไม่ตรงเทรนด์ใหญ่ ข้ามสัญญาณนี้ไปเลย
+   if(!CheckMTFTrendFilter(isBuy))
+      return;
+
+   // เช็คตัวกรอง EMA200 ของ Timeframe ปัจจุบันด้วย (คนละตัวกับ MTF ด้านบน เปิดพร้อมกันได้
+   // ทั้งคู่ = ดับเบิ้ลเช็ค ต้องผ่านทั้งสองเงื่อนไขถึงจะเปิดออเดอร์ได้)
+   if(!CheckCurrentTFTrendFilter(isBuy))
+      return;
+
+   double lot1 = NormalizeLot(InpLotTotal * InpTP1Percent / 100.0);
+   double lot2 = NormalizeLot(InpLotTotal * InpTP2Percent / 100.0);
+
+   if(lot1 <= 0 && lot2 <= 0)
+     {
+      Print("BTW_Signal_EA: lot คำนวณได้เป็น 0 ทั้งคู่ ข้ามสัญญาณนี้");
+      return;
+     }
+
+   // Basket ID = Symbol+Timeframe+timestamp ของแท่งสัญญาณ ใช้ผูกไม้ทั้งหมดในสัญญาณ
+   // เดียวกัน (ทั้ง TP1/TP2 ตอนเปิด และไม้แก้มาร์ติงเกลที่จะตามมาทีหลัง)
+   string basketId = GetChartTag() + "_" + IntegerToString((long)signalBarTime);
+
+   // จำกัดจำนวนชุด (สัญญาณ) ที่เปิดพร้อมกันได้สูงสุด: ถ้าชุดก่อนหน้ายังไม่ปิดหมด
+   // (ทั้งไม้แรกและไม้แก้มาร์ติงเกลของมัน) จะไม่เปิดสัญญาณใหม่นี้เลย รอให้ชุดเดิม
+   // ปิดครบก่อน (0 = ไม่จำกัด อนุญาตหลายชุดพร้อมกันได้)
+   if(InpMaxConcurrentBaskets > 0)
+     {
+      int activeBaskets = CountActiveBaskets();
+      if(activeBaskets >= InpMaxConcurrentBaskets)
+        {
+         Print("BTW_Signal_EA: ข้ามสัญญาณ Basket=", basketId,
+               " เพราะชุดก่อนหน้ายังไม่ปิดหมด (active=", activeBaskets, "/", InpMaxConcurrentBaskets, ")");
+         return;
+        }
+     }
+
+   Print("BTW_Signal_EA: New signal Basket=", basketId,
+         " Dir=", (isBuy ? "BUY" : "SELL"),
+         " Entry=", entry, " SL=", sl, " TP1=", tp1, " TP2=", tp2);
+
+   // เมื่อเปิดใช้มาร์ติงเกล: ไม่วาง SL จริงกับ broker ให้ไม้ TP1/TP2 (ปล่อยให้ลอย
+   // ติดลบต่อไปแทนที่จะถูกปิดขาดทุนจริง) เพราะถ้าปิดขาดทุนจริงไปแล้ว ฟังก์ชันคำนวณ
+   // กำไรรวมของ basket จะไม่เห็นผลขาดทุนก้อนนั้นอีกเลย (นับแค่ไม้ที่ยังเปิดอยู่ตอนนี้)
+   // ทำให้ระบบเข้าใจผิดว่า "กำไรรวมแท้จริง" ถึงเป้าทั้งที่จริงยังขาดทุนสุทธิอยู่
+   // ถ้าไม่เปิดมาร์ติงเกล ยังคงวาง SL จริงตามปกติเพื่อป้องกันความเสี่ยง
+   double slForOrder = InpMartingaleEnabled ? 0.0 : sl;
+
+   // เปิดตามสัญญาณทันทีที่ราคาตลาดปัจจุบัน ไม่เช็คว่ามีไม้ค้างอยู่ก่อนหรือไม่
+   if(isBuy)
+     {
+      if(lot1 > 0) trade.Buy(lot1, _Symbol, 0, slForOrder, tp1, basketId + "|" + InpOrderComment + "-TP1");
+      if(lot2 > 0) trade.Buy(lot2, _Symbol, 0, slForOrder, tp2, basketId + "|" + InpOrderComment + "-TP2");
+     }
+   else
+     {
+      if(lot1 > 0) trade.Sell(lot1, _Symbol, 0, slForOrder, tp1, basketId + "|" + InpOrderComment + "-TP1");
+      if(lot2 > 0) trade.Sell(lot2, _Symbol, 0, slForOrder, tp2, basketId + "|" + InpOrderComment + "-TP2");
+     }
+
+   // ลงทะเบียน basket ไว้เสมอ (ไม่ใช่แค่ตอนเปิดมาร์ติงเกล) เพราะใช้เป็นฐานนับ
+   // จำนวนชุดที่เปิดพร้อมกันสำหรับ InpMaxConcurrentBaskets ด้วย ไม่ใช่แค่กริดมาร์ติงเกล
+   RegisterBasket(isBuy, basketId, sl);
+  }
+
+//+------------------------------------------------------------------+
+//| ปรับ lot ให้ตรงตาม step/min/max ของโบรกเกอร์จริง                  |
+//| สำคัญสำหรับมาร์ติงเกล: multiplier เช่น 1.5, 2.5 อาจทำให้ lot มี    |
+//| ทศนิยมไม่ลงตัวกับ Volume Step ของโบรกเกอร์ ถ้าปัดผิดจำนวนตำแหน่ง   |
+//| ทศนิยม จะโดน broker reject "Invalid volume" ฟังก์ชันนี้จึงคำนวณ   |
+//| จำนวนทศนิยมจาก SYMBOL_VOLUME_STEP จริง แทนที่จะ fix ไว้ที่ 2 ตำแหน่ง|
+//+------------------------------------------------------------------+
+double NormalizeLot(double lot)
+  {
+   double minLot  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double maxLot  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   double stepLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   if(stepLot <= 0) stepLot = 0.01; // กันหารด้วย 0 กรณี broker ไม่ส่งค่ามา
+
+   // ปัดลงให้เป็นจำนวนเท่าของ step (บวก epsilon เล็กน้อยกันปัญหา floating point
+   // เช่น 0.07/0.01 อาจได้ 6.999999 แทนที่จะเป็น 7 พอดี)
+   double steps = MathFloor(lot / stepLot + 0.0000001);
+   lot = steps * stepLot;
+
+   // หาจำนวนตำแหน่งทศนิยมจริงของ step (เช่น step=0.01 -> 2 ตำแหน่ง, step=0.1 -> 1, step=1 -> 0)
+   int digits = 0;
+   double temp = stepLot;
+   while(MathAbs(temp - MathRound(temp)) > 0.0000001 && digits < 8)
+     {
+      temp *= 10;
+      digits++;
+     }
+   lot = NormalizeDouble(lot, digits);
+
+   if(lot < minLot) lot = 0; // น้อยกว่า min ให้ข้ามไม้นี้ (กัน broker reject)
+   if(lot > maxLot) lot = maxLot;
+
+   return lot;
+  }
+
+//+------------------------------------------------------------------+
+//| แตกค่า string คั่นด้วย , ให้เป็น array ของ double                 |
+//+------------------------------------------------------------------+
+void ParseDoubleList(const string s, double &arr[])
+  {
+   string parts[];
+   int n = StringSplit(s, ',', parts);
+   ArrayResize(arr, n);
+   for(int i = 0; i < n; i++)
+      arr[i] = StringToDouble(parts[i]);
+  }
+
+//+------------------------------------------------------------------+
+//| ลงทะเบียน basket ใหม่สำหรับสัญญาณที่เพิ่งเปิดออเดอร์ไป             |
+//+------------------------------------------------------------------+
+void RegisterBasket(bool isBuy, const string basketId, double slPrice)
+  {
+   int idx = ArraySize(g_baskets);
+   ArrayResize(g_baskets, idx + 1);
+   g_baskets[idx].active           = true;
+   g_baskets[idx].isBuy            = isBuy;
+   g_baskets[idx].basketId         = basketId;
+   g_baskets[idx].slPrice          = slPrice;
+   g_baskets[idx].baseLot          = InpLotTotal;
+   g_baskets[idx].gridLevel        = 0;
+   g_baskets[idx].nextTriggerPrice = slPrice; // ไม้แก้ชั้น 1 เปิดที่ SL เดิมพอดี
+   g_baskets[idx].realizedProfit   = 0.0;     // v1.12 (candidate): เริ่มต้นที่ 0 เสมอสำหรับ basket ใหม่
+
+   Print("BTW_Signal_EA: ลงทะเบียน Martingale Basket=", basketId,
+         " Dir=", (isBuy ? "BUY" : "SELL"), " SL=", slPrice);
+  }
+
+//+------------------------------------------------------------------+
+//| อัปเดตสถานะ active ของทุก basket (เช็คว่าไม่มีไม้เหลือแล้วหรือยัง)  |
+//| ฟังก์ชันนี้ต้องรันทุก tick เสมอ ไม่ว่าจะเปิดมาร์ติงเกลหรือไม่ก็ตาม   |
+//| เพราะใช้เป็นฐานในการนับจำนวน basket ที่ยังเปิดอยู่ (สำหรับ           |
+//| InpMaxConcurrentBaskets) แม้ไม่ได้เปิดมาร์ติงเกลเลยก็ต้องรู้ว่า      |
+//| basket ไหนปิดหมดแล้วบ้าง                                          |
+//+------------------------------------------------------------------+
+void UpdateBasketLifecycle()
+  {
+   for(int i = ArraySize(g_baskets) - 1; i >= 0; i--)
+     {
+      if(!g_baskets[i].active)
+         continue;
+      if(CountBasketOpenPositions(g_baskets[i].basketId) == 0)
+         g_baskets[i].active = false;
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| นับจำนวน basket ที่ยังมีไม้เปิดอยู่ตอนนี้ (ใช้จำกัดจำนวนชุดพร้อมกัน)|
+//+------------------------------------------------------------------+
+int CountActiveBaskets()
+  {
+   int c = 0;
+   for(int i = 0; i < ArraySize(g_baskets); i++)
+      if(g_baskets[i].active)
+         c++;
+   return c;
+  }
+
+//+------------------------------------------------------------------+
+//| ดูแลระบบมาร์ติงเกลทุก basket ที่ active อยู่ (เรียกทุก tick)        |
+//+------------------------------------------------------------------+
+void ManageMartingale()
+  {
+   if(!InpMartingaleEnabled)
+      return;
+
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+
+   for(int i = ArraySize(g_baskets) - 1; i >= 0; i--)
+     {
+      if(!g_baskets[i].active)
+         continue;
+
+      // 1) เช็คก่อนเสมอว่าราคาแตะจุดเปิดไม้แก้ชั้นถัดไปหรือยัง (ก่อนเช็คว่าไม้เหลือ
+      //    หรือไม่) เพราะไม้เดิม (TP1+TP2 ที่ใช้ SL ราคาเดียวกัน) อาจเพิ่งถูกปิด
+      //    พร้อมกันไปแล้วโดย broker พอดีตอนราคาแตะ SL ถ้าไปเช็ค "ไม่มีไม้เหลือ"
+      //    ก่อน จะเข้าใจผิดว่า basket จบแล้ว ทั้งที่ควรเปิดไม้แก้ตรงจุดนั้นพอดี
+      if(g_baskets[i].gridLevel < InpMartingaleMaxLevels)
+        {
+         bool triggered;
+         if(g_baskets[i].isBuy)
+            triggered = (bid <= g_baskets[i].nextTriggerPrice);
+         else
+            triggered = (ask >= g_baskets[i].nextTriggerPrice);
+
+         if(triggered)
+            OpenMartingaleOrder(g_baskets[i]);
+        }
+
+      int openCount = CountBasketOpenPositions(g_baskets[i].basketId);
+
+      // 2) เช็คปิดกำไรด่วน เฉพาะชุดที่ถูกแก้ไม้ไปแล้วอย่างน้อย 1 ชั้น และยังมีไม้เปิดอยู่
+      // v1.12 (candidate): รวม realizedProfit (กำไรที่ Pair-Close ล็อกไปแล้วก่อนหน้า)
+      // เข้ากับ floating profit ปัจจุบันด้วย ไม่ใช่นับแค่ไม้ที่ยังเปิดอยู่ตอนนี้เหมือนเดิม
+      // เพราะของเดิมทำให้กำไรที่ล็อกไปแล้วหายไปจากสมการ ทำให้ปิดทั้งชุดช้ากว่าที่ควร
+      if(g_baskets[i].gridLevel > 0 && openCount > 0)
+        {
+         double floatingProfit = GetBasketFloatingProfit(g_baskets[i].basketId) + g_baskets[i].realizedProfit;
+         if(floatingProfit >= InpMartingaleCloseProfitUSD)
+           {
+            Print("BTW_Signal_EA: Basket=", g_baskets[i].basketId,
+                  " ปิดกำไรด่วน floating+realized=", floatingProfit, " USD (เป้า=", InpMartingaleCloseProfitUSD, ")");
+            CloseBasketPositions(g_baskets[i].basketId);
+            g_baskets[i].active = false;
+            continue;
+           }
+        }
+
+      // 3) ถ้าไม่มีไม้เหลืออยู่ในชุดนี้แล้ว (ปิดหมดไม่ว่าจะด้วย TP/SL/ปิดกำไรด่วน) เลิกติดตาม
+      if(openCount == 0)
+         g_baskets[i].active = false;
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| เปิดไม้แก้ชั้นถัดไปของ basket ที่ระบุ แล้วเลื่อนจุดเปิดชั้นถัดไป    |
+//+------------------------------------------------------------------+
+void OpenMartingaleOrder(MartingaleBasket &b)
+  {
+   // ดึง multiplier ของชั้นนี้ ถ้า list สั้นกว่าชั้นปัจจุบัน ใช้ค่าตัวสุดท้ายซ้ำไปเรื่อย ๆ
+   // (เช่นใส่ list แค่ "2" ตัวเดียว จะเท่ากับ x2 ทุกชั้นจนถึง InpMartingaleMaxLevels)
+   double mult;
+   if(b.gridLevel < ArraySize(g_mtgMultipliers))
+      mult = g_mtgMultipliers[b.gridLevel];
+   else if(ArraySize(g_mtgMultipliers) > 0)
+      mult = g_mtgMultipliers[ArraySize(g_mtgMultipliers) - 1];
+   else
+      mult = 1.0;
+
+   // ขนาดไม้แก้อิงจาก "Lot ที่ยังเหลือเปิดอยู่จริงในชุดนี้ ณ ขณะนี้" ไม่ใช่ Lot รวม
+   // เดิมทั้งก้อนที่ตั้งไว้ตอนแรก เพราะถ้าบางไม้ (เช่น TP1) ปิดกำไรไปแล้วก่อนหน้านี้
+   // ควรแก้ไม้ตามสัดส่วนที่ยังเสี่ยงอยู่จริง ไม่ใช่คำนวณจากขนาดสัญญาณเดิมทั้งหมด
+   double currentOpenLot = GetBasketOpenLotVolume(b.basketId);
+   if(currentOpenLot <= 0)
+      currentOpenLot = b.baseLot; // เผื่อกรณีขอบ ๆ ที่ไม่มีไม้เหลือเลย กันไม้แก้ lot=0
+
+   double lot = NormalizeLot(currentOpenLot * mult);
+
+   if(lot <= 0)
+     {
+      Print("BTW_Signal_EA: Martingale lot คำนวณได้ 0 ข้ามชั้นนี้ (basket=", b.basketId, ")");
+     }
+   else
+     {
+      string cmt = b.basketId + "|" + InpOrderComment + "-M" + IntegerToString(b.gridLevel + 1);
+      bool ok;
+      // ไม้แก้ไม่ตั้ง SL/TP เดี่ยว เพราะปิดรวมทั้งชุดด้วยเป้ากำไรของ basket แทน
+      if(b.isBuy)
+         ok = trade.Buy(lot, _Symbol, 0, 0, 0, cmt);
+      else
+         ok = trade.Sell(lot, _Symbol, 0, 0, 0, cmt);
+
+      if(ok)
+         Print("BTW_Signal_EA: เปิดไม้แก้ basket=", b.basketId,
+               " ชั้น=", (b.gridLevel + 1), " lot=", lot, " (openLot=", currentOpenLot, " x", mult, ")",
+               " ที่ระดับราคา ", b.nextTriggerPrice);
+      else
+         Print("BTW_Signal_EA: เปิดไม้แก้ล้มเหลว basket=", b.basketId,
+               " ชั้น=", (b.gridLevel + 1), " err=", GetLastError());
+     }
+
+   // เลื่อนไปชั้นถัดไปเสมอ (ไม่ว่าออเดอร์จะสำเร็จหรือไม่) กันลูปพยายามเปิดซ้ำที่ราคาเดิม
+   // ระยะห่างราคาใช้ InpMartingaleGapUSD ค่าเดียวกันทุกชั้น (ใส่เองอิสระ)
+   b.gridLevel++;
+   if(b.isBuy)
+      b.nextTriggerPrice -= InpMartingaleGapUSD;
+   else
+      b.nextTriggerPrice += InpMartingaleGapUSD;
+  }
+
+//+------------------------------------------------------------------+
+//| หาไม้ "ใหม่สุด" (ตามเวลาเปิด) กับไม้ "ที่ P/L ดีที่สุด/ติดลบน้อยสุด"|
+//| ในบรรดาไม้ที่เหลือ (ไม่รวมไม้ใหม่สุด) ที่ยังเปิดอยู่ใน basket ที่   |
+//| ระบุ ใช้สำหรับระบบจับคู่ปิด (Pair-Close) คืนค่า false ถ้ามีไม้ไม่ถึง|
+//| 2 ไม้ในชุดนั้น (ค้นหาเฉพาะภายใน basket เดียวกันเท่านั้น ไม่มีทาง   |
+//| ไปจับคู่ข้าม basket ได้เพราะกรองด้วย basketId ทุกจุด)              |
+//+------------------------------------------------------------------+
+bool GetNewestAndLeastLossBasketPositions(const string basketId, ulong &newestTicket, ulong &leastLossTicket)
+  {
+   ulong newest = 0;
+   datetime newestTime = 0;
+   int count = 0;
+
+   int total = PositionsTotal();
+
+   // รอบแรก: หาไม้ใหม่สุดตามเวลาเปิด
+   for(int i = 0; i < total; i++)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0) continue;
+      if(!PositionSelectByTicket(ticket)) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpMagic) continue;
+      string cmt = PositionGetString(POSITION_COMMENT);
+      if(StringFind(cmt, basketId) != 0) continue;
+
+      count++;
+      datetime t = (datetime)PositionGetInteger(POSITION_TIME);
+      if(newest == 0 || t > newestTime)
+        {
+         newestTime = t;
+         newest = ticket;
+        }
+     }
+
+   if(count < 2)
+      return false;
+
+   // รอบสอง: หาไม้ที่ P/L ดีที่สุด (ติดลบน้อยสุด) ในบรรดาไม้ที่เหลือ (ไม่รวมไม้ใหม่สุด)
+   ulong best = 0;
+   double bestProfit = 0;
+   bool found = false;
+
+   for(int i = 0; i < total; i++)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0) continue;
+      if(!PositionSelectByTicket(ticket)) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpMagic) continue;
+      string cmt = PositionGetString(POSITION_COMMENT);
+      if(StringFind(cmt, basketId) != 0) continue;
+      if(ticket == newest) continue;
+
+      double p = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+      if(!found || p > bestProfit)
+        {
+         bestProfit = p;
+         best = ticket;
+         found = true;
+        }
+     }
+
+   if(!found)
+      return false;
+
+   newestTicket = newest;
+   leastLossTicket = best;
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+//| ระบบจับคู่ปิด (Pair-Close): จับไม้ "ใหม่สุด" กับไม้ "ที่ P/L ดีที่สุด|
+//| /ติดลบน้อยสุด" ของแต่ละ basket (จับคู่เฉพาะภายใน basket เดียวกัน   |
+//| เท่านั้น) ที่ผ่านเงื่อนไข InpPairCloseStartLevel มาปิดคู่กันเมื่อ   |
+//| กำไรรวมของคู่นั้นถึงเป้า แล้วเปิดไม้ทดแทนที่ราคาปัจจุบันทันที ขนาด  |
+//| lot เท่ากับไม้ "ใหม่สุด" ที่เพิ่งปิดไป (ไม่มี SL/TP เดี่ยว เหมือนไม้|
+//| แก้ทั่วไป) ทำงานแยกอิสระจากระบบ Grid-trigger และปิดทั้งชุดด้านบน   |
+//| โดยสิ้นเชิง ไม่แก้ gridLevel/nextTriggerPrice ของ basket เลย       |
+//+------------------------------------------------------------------+
+void ManagePairClose()
+  {
+   if(!InpPairCloseEnabled)
+      return;
+
+   for(int i = ArraySize(g_baskets) - 1; i >= 0; i--)
+     {
+      if(!g_baskets[i].active)
+         continue;
+
+      // เริ่มจับคู่ปิดก็ต่อเมื่อ basket นี้เปิดไม้แก้ไปแล้วอย่างน้อยตามที่ตั้งไว้
+      if(g_baskets[i].gridLevel < InpPairCloseStartLevel)
+         continue;
+
+      ulong newestTicket, leastLossTicket;
+      if(!GetNewestAndLeastLossBasketPositions(g_baskets[i].basketId, newestTicket, leastLossTicket))
+         continue; // มีไม้เปิดอยู่ไม่ถึง 2 ไม้ ยังจับคู่ไม่ได้
+
+      if(!PositionSelectByTicket(leastLossTicket))
+         continue;
+      double leastLossProfit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+
+      if(!PositionSelectByTicket(newestTicket))
+         continue;
+      double newestProfit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+      double newestVolume = PositionGetDouble(POSITION_VOLUME);
+
+      double pairProfit = leastLossProfit + newestProfit;
+      if(pairProfit < InpPairCloseProfitUSD)
+         continue; // คู่นี้ยังไม่ถึงเป้ากำไร
+
+      Print("BTW_Signal_EA: Pair-Close basket=", g_baskets[i].basketId,
+            " ปิดคู่ newest#", newestTicket, " + leastLoss#", leastLossTicket,
+            " กำไรรวม=", DoubleToString(pairProfit, 2), " USD (เป้า=", InpPairCloseProfitUSD, ")");
+
+      trade.PositionClose(leastLossTicket);
+      trade.PositionClose(newestTicket);
+
+      // v1.12 (candidate): สะสมกำไรที่ปิดคู่นี้ไปแล้วเข้า realizedProfit ของ basket
+      // เพื่อให้ ManageMartingale (เช็คปิดกำไรด่วนทั้งชุด) นับกำไรที่ล็อกไปแล้วนี้
+      // รวมเข้ากับ floating profit ปัจจุบันด้วย ไม่หายไปจากสมการเหมือนเดิม
+      // หมายเหตุ: ยังไม่ได้เช็คผลสำเร็จของ trade.PositionClose() ทั้งสองบรรทัดข้างบน
+      // (เป็นอีกจุดที่ทราบว่าควรแก้แยกต่างหาก ยังไม่รวมอยู่ในแพตช์นี้)
+      g_baskets[i].realizedProfit += pairProfit;
+
+      // เปิดไม้ทดแทนทันทีที่ราคาปัจจุบัน lot เท่ากับไม้ "ใหม่สุด" ที่เพิ่งปิดไป
+      // ไม่มี SL/TP เดี่ยว (เหมือนไม้แก้มาร์ติงเกลทั่วไป) และไม่แตะ gridLevel/
+      // nextTriggerPrice ของ basket เลย เพราะนี่ไม่ใช่ไม้แก้ชั้นใหม่ แค่รักษา
+      // ขนาด "กระสุน" เดิมให้พร้อมอยู่ใกล้ราคาปัจจุบันเสมอ
+      double lot = NormalizeLot(newestVolume);
+      if(lot > 0)
+        {
+         string cmt = g_baskets[i].basketId + "|" + InpOrderComment + "-PC";
+         bool ok;
+         if(g_baskets[i].isBuy)
+            ok = trade.Buy(lot, _Symbol, 0, 0, 0, cmt);
+         else
+            ok = trade.Sell(lot, _Symbol, 0, 0, 0, cmt);
+
+         if(ok)
+            Print("BTW_Signal_EA: Pair-Close เปิดไม้ทดแทน basket=", g_baskets[i].basketId, " lot=", lot);
+         else
+            Print("BTW_Signal_EA: Pair-Close เปิดไม้ทดแทนล้มเหลว basket=", g_baskets[i].basketId, " err=", GetLastError());
+        }
+      else
+        {
+         Print("BTW_Signal_EA: Pair-Close lot คำนวณได้ 0 ข้ามการเปิดไม้ทดแทน basket=", g_baskets[i].basketId);
+        }
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| นับจำนวนไม้ที่ยังเปิดอยู่ของ basket ที่ระบุ                        |
+//+------------------------------------------------------------------+
+int CountBasketOpenPositions(const string basketId)
+  {
+   int count = 0;
+   int total = PositionsTotal();
+   for(int i = 0; i < total; i++)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0) continue;
+      if(!PositionSelectByTicket(ticket)) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpMagic) continue;
+      string cmt = PositionGetString(POSITION_COMMENT);
+      if(StringFind(cmt, basketId) != 0) continue; // comment ต้องขึ้นต้นด้วย basketId
+      count++;
+     }
+   return count;
+  }
+
+//+------------------------------------------------------------------+
+//| รวม Lot ของไม้ที่ยังเปิดอยู่จริงทั้งหมดใน basket ที่ระบุ (ใช้เป็นฐาน|
+//| คำนวณขนาดไม้แก้ชั้นถัดไป ให้สมส่วนกับสิ่งที่ยังเสี่ยงอยู่จริง)      |
+//+------------------------------------------------------------------+
+double GetBasketOpenLotVolume(const string basketId)
+  {
+   double sum = 0;
+   int total = PositionsTotal();
+   for(int i = 0; i < total; i++)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0) continue;
+      if(!PositionSelectByTicket(ticket)) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpMagic) continue;
+      string cmt = PositionGetString(POSITION_COMMENT);
+      if(StringFind(cmt, basketId) != 0) continue;
+      sum += PositionGetDouble(POSITION_VOLUME);
+     }
+   return sum;
+  }
+
+//+------------------------------------------------------------------+
+//| รวมกำไรลอย (profit+swap) ของทุกไม้ใน basket ที่ระบุ                |
+//+------------------------------------------------------------------+
+double GetBasketFloatingProfit(const string basketId)
+  {
+   double sum = 0;
+   int total = PositionsTotal();
+   for(int i = 0; i < total; i++)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0) continue;
+      if(!PositionSelectByTicket(ticket)) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpMagic) continue;
+      string cmt = PositionGetString(POSITION_COMMENT);
+      if(StringFind(cmt, basketId) != 0) continue;
+      sum += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+     }
+   return sum;
+  }
+
+//+------------------------------------------------------------------+
+//| ปิดไม้ทั้งหมดของ basket ที่ระบุ (ใช้ตอนถึงเป้ากำไรด่วน)             |
+//+------------------------------------------------------------------+
+void CloseBasketPositions(const string basketId)
+  {
+   int total = PositionsTotal();
+   for(int i = total - 1; i >= 0; i--)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0) continue;
+      if(!PositionSelectByTicket(ticket)) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpMagic) continue;
+      string cmt = PositionGetString(POSITION_COMMENT);
+      if(StringFind(cmt, basketId) != 0) continue;
+      trade.PositionClose(ticket);
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| คำนวณขอบเขตเวลา "วันนี้" (ในหน่วยเวลา server เพื่อใช้ query        |
+//| HistorySelect) โดยเทียบจากเวลาไทยหรือเวลา server ตาม Input        |
+//| เวลาไทยคำนวณโดยเทียบเวลาเครื่อง (TimeLocal) กับเวลา server        |
+//| (TimeCurrent) สดใหม่ทุกครั้ง ไม่ต้องเดา GMT offset ของโบรกเกอร์เอง  |
+//| (ใช้ได้ก็ต่อเมื่อนาฬิกาเครื่องตั้งเป็นเวลาไทยถูกต้องอยู่แล้ว)        |
+//+------------------------------------------------------------------+
+void GetDayBoundaries(datetime &dayStartServer, datetime &dayEndServer)
+  {
+   if(InpUseThaiTime)
+     {
+      long offsetSeconds = (long)TimeLocal() - (long)TimeCurrent(); // ส่วนต่างเวลาเครื่อง - เวลา server ขณะนี้
+      datetime dayStartLocal = TimeLocal() - (TimeLocal() % 86400);
+      dayStartServer = dayStartLocal - (datetime)offsetSeconds;
+     }
+   else
+     {
+      dayStartServer = TimeCurrent() - (TimeCurrent() % 86400);
+     }
+   dayEndServer = dayStartServer + 86400;
+  }
+
+//+------------------------------------------------------------------+
+//| v1.11 (candidate): เวอร์ชัน "นิ่ง" ของ GetDayBoundaries — คำนวณค่า  |
+//| ดิบจากสูตรเดิม แล้วเทียบกับค่าที่ cache ไว้ด้วย tolerance (ไม่ใช่    |
+//| exact equality) ถ้าต่างกันไม่เกิน DAY_CHANGE_TOLERANCE_SEC ถือว่า    |
+//| เป็น "จิตเตอร์" ของการอ่านนาฬิกาสด ไม่ใช่วันเปลี่ยนจริง จะไม่แตะ      |
+//| cache เลย ทุกจุดที่ต้องใช้ขอบเขตวัน (rollover log, HistorySelect     |
+//| ของ dashboard) ต้องเรียกฟังก์ชันนี้แทน GetDayBoundaries() ตรง ๆ      |
+//+------------------------------------------------------------------+
+void GetStableDayBoundaries(datetime &dayStartOut, datetime &dayEndOut)
+  {
+   datetime rawStart, rawEnd;
+   GetDayBoundaries(rawStart, rawEnd);
+
+   const long DAY_CHANGE_TOLERANCE_SEC = 3600; // 1 ชั่วโมง: กันจิตเตอร์ (~1-2 วิ) ได้สบาย
+                                                // แต่เล็กกว่าการข้ามวันจริง (86400 วิ) มาก ๆ
+
+   bool isFirstRun      = (g_cachedDayStart == 0);
+   bool isRealDayChange = isFirstRun || (MathAbs((long)rawStart - (long)g_cachedDayStart) > DAY_CHANGE_TOLERANCE_SEC);
+
+   if(isRealDayChange)
+     {
+      if(!isFirstRun)
+        {
+         Print("BTW_Signal_EA: ข้ามวันใหม่แล้ว ขอบเขตวันนี้ = ",
+               TimeToString(rawStart, TIME_DATE|TIME_MINUTES), " ถึง ",
+               TimeToString(rawEnd, TIME_DATE|TIME_MINUTES), " (server time) — Dashboard จะเริ่มนับจาก 0 ใหม่โดยอัตโนมัติ");
+
+         // บังคับให้พิมพ์สรุป debug อีกครั้งตอนข้ามวันจริง แม้ยอด/จำนวนของวันใหม่จะ
+         // บังเอิญตรงกับของวันเก่าก็ตาม ไม่ต้องรีเซ็ต g_debugLastPrintedTicket เพราะ
+         // deal ticket ของ MT5 เพิ่มขึ้นเรื่อย ๆ ข้ามวันอยู่แล้ว ไม่มีทางย้อนกลับ
+         g_debugLastMatchedCount = -1;
+         g_debugLastRealizedSum  = 0.0;
+        }
+      g_cachedDayStart = rawStart;
+      g_cachedDayEnd   = rawEnd;
+     }
+
+   dayStartOut = g_cachedDayStart;
+   dayEndOut   = g_cachedDayEnd;
+  }
+
+//+------------------------------------------------------------------+
+//| เช็คว่าเข้าวันใหม่หรือยัง (ตามเขตเวลาที่เลือก) ถ้าใช่ log ไว้ให้เห็นชัด|
+//| ว่า EA ตรวจจับการข้ามวันได้ถูกต้อง (ตัว P/L/Signals จริงไม่ต้องรอ    |
+//| ฟังก์ชันนี้ เพราะคำนวณสดจาก History ตามขอบเขตวันล่าสุดอยู่แล้วทุกครั้ง)|
+//| v1.11 (candidate): ย้าย logic การเปรียบเทียบ/cache ไปอยู่ที่          |
+//| GetStableDayBoundaries ทั้งหมดแล้ว ฟังก์ชันนี้เหลือแค่เรียกมัน       |
+//+------------------------------------------------------------------+
+void CheckDailyCounterRollover()
+  {
+   datetime dayStart, dayEnd;
+   GetStableDayBoundaries(dayStart, dayEnd);
+  }
+
+//+------------------------------------------------------------------+
+//| รวมกำไรที่ "ปิดไปแล้วจริง" (realized) ของ EA นี้ ภายในช่วงเวลาที่ระบุ|
+//| v1.11 (candidate): InpDebugDashboard พิมพ์เฉพาะ "การเปลี่ยนแปลง"     |
+//| เท่านั้น (deal ใหม่ที่ยังไม่เคยพิมพ์ + สรุปรวมเฉพาะตอนยอด/จำนวน      |
+//| เปลี่ยนจริง) แทนการพิมพ์ทุก deal ของทั้งวันซ้ำทุกครั้งที่ dashboard   |
+//| รีเฟรช (~2 วิ) ซึ่งทำให้ log บวมเป็นพัน/หมื่นบรรทัดถ้าเทรดนาน/บ่อย    |
+//| (ยืนยันจาก log จริงที่ผู้ใช้ส่งมา — พิมพ์ deal ชุดเดิมซ้ำทุก 2-3 วิ)  |
+//+------------------------------------------------------------------+
+double GetRealizedProfitInRange(datetime rangeStart, datetime rangeEnd)
+  {
+   double sum = 0;
+   int matchedCount = 0;
+   ulong maxTicketThisPass = g_debugLastPrintedTicket;
+
+   if(!HistorySelect(rangeStart, rangeEnd))
+     {
+      if(InpDebugDashboard)
+         Print("BTW_Signal_EA DEBUG: HistorySelect ล้มเหลว range=", TimeToString(rangeStart), " - ", TimeToString(rangeEnd));
+      return 0;
+     }
+
+   int total = HistoryDealsTotal();
+   for(int i = 0; i < total; i++)
+     {
+      ulong ticket = HistoryDealGetTicket(i);
+      if(ticket == 0) continue;
+      if(HistoryDealGetInteger(ticket, DEAL_MAGIC) != InpMagic) continue;
+      double dealSum = HistoryDealGetDouble(ticket, DEAL_PROFIT)
+                      + HistoryDealGetDouble(ticket, DEAL_SWAP)
+                      + HistoryDealGetDouble(ticket, DEAL_COMMISSION);
+      sum += dealSum;
+      matchedCount++;
+
+      // พิมพ์รายละเอียดเฉพาะ deal ที่ ticket ใหม่กว่าที่เคยพิมพ์ไปแล้วเท่านั้น (deal
+      // ticket ของ MT5 เพิ่มขึ้นเรื่อย ๆ ไม่มีวันย้อนกลับ ใช้เทียบ "ใหม่/เก่า" ได้)
+      if(InpDebugDashboard && ticket > g_debugLastPrintedTicket)
+        {
+         Print("BTW_Signal_EA DEBUG: deal#", ticket,
+               " time=", TimeToString(HistoryDealGetInteger(ticket, DEAL_TIME), TIME_DATE|TIME_SECONDS),
+               " magic=", HistoryDealGetInteger(ticket, DEAL_MAGIC),
+               " entry=", EnumToString((ENUM_DEAL_ENTRY)HistoryDealGetInteger(ticket, DEAL_ENTRY)),
+               " profit+swap+comm=", DoubleToString(dealSum, 2),
+               " comment=", HistoryDealGetString(ticket, DEAL_COMMENT));
+        }
+      if(ticket > maxTicketThisPass)
+         maxTicketThisPass = ticket;
+     }
+
+   if(InpDebugDashboard)
+     {
+      g_debugLastPrintedTicket = maxTicketThisPass; // เลื่อนเครื่องหมาย "เคยพิมพ์แล้ว" ไปยัง ticket ล่าสุด
+
+      // พิมพ์สรุปรวมเฉพาะตอนยอด/จำนวน deal เปลี่ยนจากครั้งก่อนจริง ๆ เท่านั้น (กัน
+      // พิมพ์บรรทัดเดิมซ้ำทุก 2 วิระหว่างที่ยังไม่มีอะไรเปลี่ยนแปลง)
+      bool changed = (matchedCount != g_debugLastMatchedCount) || (MathAbs(sum - g_debugLastRealizedSum) > 0.0001);
+      if(changed)
+        {
+         Print("BTW_Signal_EA DEBUG: ช่วงเวลาที่ query = ", TimeToString(rangeStart, TIME_DATE|TIME_SECONDS),
+               " ถึง ", TimeToString(rangeEnd, TIME_DATE|TIME_SECONDS),
+               " (server time) | รวม deal ที่นับได้ = ", matchedCount,
+               " | ผลรวม = ", DoubleToString(sum, 2), " USD | HistoryDealsTotal ทั้งหมด (ไม่กรอง) = ", total);
+         g_debugLastMatchedCount = matchedCount;
+         g_debugLastRealizedSum  = sum;
+        }
+     }
+
+   return sum;
+  }
+
+//+------------------------------------------------------------------+
+//| รวมกำไรลอย (unrealized) ของทุกไม้ที่ EA นี้เปิดอยู่ตอนนี้            |
+//+------------------------------------------------------------------+
+double GetFloatingProfitAll()
+  {
+   double sum = 0;
+   int total = PositionsTotal();
+   for(int i = 0; i < total; i++)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0) continue;
+      if(!PositionSelectByTicket(ticket)) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpMagic) continue;
+      sum += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+     }
+   return sum;
+  }
+
+//+------------------------------------------------------------------+
+//| นับจำนวนสัญญาณที่เปิดไม้แรกวันนี้ โดยนับจาก "ประวัติจริง" ของ      |
+//| broker (นับ basketId ที่ไม่ซ้ำกันจาก deal ฝั่งเปิดที่มี Magic       |
+//| ตรงกัน) แทนการใช้ตัวนับสะสมในหน่วยความจำ เพราะตัวนับในหน่วยความจำ  |
+//| จะรีเซ็ตเป็น 0 ทุกครั้งที่ EA reload (ถอด-แนบใหม่/compile ใหม่)     |
+//| ทำให้นับไม่ครบถ้า reload ระหว่างวัน วิธีนี้นับจากข้อมูลจริงเสมอ     |
+//| แม่นยำไม่ว่าจะ reload กี่ครั้งก็ตาม                                |
+//+------------------------------------------------------------------+
+int GetDailySignalCountFromHistory(datetime rangeStart, datetime rangeEnd)
+  {
+   string seenBaskets[];
+   int seenCount = 0;
+
+   if(!HistorySelect(rangeStart, rangeEnd))
+      return 0;
+
+   int total = HistoryDealsTotal();
+   for(int i = 0; i < total; i++)
+     {
+      ulong ticket = HistoryDealGetTicket(i);
+      if(ticket == 0) continue;
+      if(HistoryDealGetInteger(ticket, DEAL_MAGIC) != InpMagic) continue;
+      if((ENUM_DEAL_ENTRY)HistoryDealGetInteger(ticket, DEAL_ENTRY) != DEAL_ENTRY_IN) continue; // เอาเฉพาะ deal ฝั่งเปิด
+
+      string cmt = HistoryDealGetString(ticket, DEAL_COMMENT);
+      int sep = StringFind(cmt, "|");
+      string basketId = (sep >= 0) ? StringSubstr(cmt, 0, sep) : cmt;
+
+      bool found = false;
+      for(int k = 0; k < seenCount; k++)
+        {
+         if(seenBaskets[k] == basketId)
+           {
+            found = true;
+            break;
+           }
+        }
+      if(!found)
+        {
+         ArrayResize(seenBaskets, seenCount + 1);
+         seenBaskets[seenCount] = basketId;
+         seenCount++;
+        }
+     }
+   return seenCount;
+  }
+
+//+------------------------------------------------------------------+
+//| วาด/อัปเดตกล่องสรุปผลประจำวันที่มุมซ้ายล่างของกราฟ                  |
+//| หมายเหตุ: OBJ_LABEL ของ MT5 ไม่รองรับข้อความหลายบรรทัดในตัวเดียว   |
+//| (ใส่ \n ไปแล้วมันไม่ตัดบรรทัดจริง กลายเป็นเส้นเดียวยาวทะลุขอบจอ)     |
+//| จึงต้องสร้าง Label แยกทีละบรรทัดแทน แล้วเรียงตำแหน่ง Y เอง         |
+//+------------------------------------------------------------------+
+void UpdateDailyDashboard()
+  {
+   int lineCount = 6;
+
+   if(!InpShowDailyDashboard)
+     {
+      ObjectDelete(0, DASH_BG_NAME);
+      for(int i = 0; i < lineCount; i++)
+         ObjectDelete(0, DASH_OBJ_NAME + "_L" + IntegerToString(i));
+      return;
+     }
+
+   // จำกัดความถี่อัปเดต กันหนักเครื่อง (ทุกประมาณ 2 วินาทีพอ)
+   if(GetTickCount() - g_lastDashboardUpdate < 2000)
+      return;
+   g_lastDashboardUpdate = GetTickCount();
+
+   datetime dayStart, dayEnd;
+   // v1.11 (candidate): ใช้ค่าที่ cache ไว้แล้ว (นิ่ง ไม่สั่นตามจิตเตอร์ของนาฬิกาสด)
+   // แทนการเรียก GetDayBoundaries() ตรง ๆ
+   GetStableDayBoundaries(dayStart, dayEnd);
+
+   double realized = GetRealizedProfitInRange(dayStart, dayEnd);
+   double floating = GetFloatingProfitAll();
+   double totalToday = realized + floating;
+
+   string tzLabel = InpUseThaiTime ? "Thai Time" : "Server Time";
+
+   string lines[6];
+   lines[0] = "BTW Signal EA - Today";
+   lines[1] = "(" + tzLabel + ")";
+   lines[2] = "P/L: " + DoubleToString(totalToday, 2) + " USD";
+   lines[3] = "Closed: " + DoubleToString(realized, 2);
+   lines[4] = "Floating: " + DoubleToString(floating, 2);
+   lines[5] = "Signals: " + IntegerToString(GetDailySignalCountFromHistory(dayStart, dayEnd));
+
+   int fontSize   = 11;
+   int lineHeight = 17;
+   int xDist      = 10;
+   int yBase      = 10;         // ระยะจากขอบล่างจอถึงบรรทัดล่างสุด
+   int boxWidth   = 180;
+   int boxHeight  = yBase - 4 + lineCount * lineHeight + 8;
+   color dashColor = (totalToday >= 0) ? clrLime : C'255,90,90';
+
+   // กล่องพื้นหลังทึบ (มุมซ้ายล่าง)
+   if(ObjectFind(0, DASH_BG_NAME) < 0)
+     {
+      ObjectCreate(0, DASH_BG_NAME, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+      ObjectSetInteger(0, DASH_BG_NAME, OBJPROP_CORNER, CORNER_LEFT_LOWER);
+      ObjectSetInteger(0, DASH_BG_NAME, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, DASH_BG_NAME, OBJPROP_HIDDEN, true);
+      ObjectSetInteger(0, DASH_BG_NAME, OBJPROP_BACK, false);
+      ObjectSetInteger(0, DASH_BG_NAME, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+      ObjectSetInteger(0, DASH_BG_NAME, OBJPROP_COLOR, clrSilver);
+      ObjectSetInteger(0, DASH_BG_NAME, OBJPROP_BGCOLOR, C'20,20,20');
+      ObjectSetInteger(0, DASH_BG_NAME, OBJPROP_WIDTH, 1);
+     }
+   ObjectSetInteger(0, DASH_BG_NAME, OBJPROP_XDISTANCE, xDist - 6);
+   ObjectSetInteger(0, DASH_BG_NAME, OBJPROP_YDISTANCE, yBase - 4);
+   ObjectSetInteger(0, DASH_BG_NAME, OBJPROP_XSIZE, boxWidth);
+   ObjectSetInteger(0, DASH_BG_NAME, OBJPROP_YSIZE, boxHeight);
+
+   // สร้าง/อัปเดต Label ทีละบรรทัด เรียงจากล่างขึ้นบน (บรรทัดแรกอยู่บนสุด)
+   for(int i = 0; i < lineCount; i++)
+     {
+      string objName = DASH_OBJ_NAME + "_L" + IntegerToString(i);
+      int yOffset = yBase + (lineCount - 1 - i) * lineHeight;
+
+      if(ObjectFind(0, objName) < 0)
+        {
+         ObjectCreate(0, objName, OBJ_LABEL, 0, 0, 0);
+         ObjectSetInteger(0, objName, OBJPROP_CORNER, CORNER_LEFT_LOWER);
+         ObjectSetInteger(0, objName, OBJPROP_ANCHOR, ANCHOR_LEFT_LOWER);
+         ObjectSetString(0, objName, OBJPROP_FONT, "Consolas Bold");
+         ObjectSetInteger(0, objName, OBJPROP_SELECTABLE, false);
+         ObjectSetInteger(0, objName, OBJPROP_HIDDEN, true);
+         ObjectSetInteger(0, objName, OBJPROP_BACK, false);
+        }
+      ObjectSetInteger(0, objName, OBJPROP_XDISTANCE, xDist);
+      ObjectSetInteger(0, objName, OBJPROP_YDISTANCE, yOffset);
+      ObjectSetInteger(0, objName, OBJPROP_FONTSIZE, fontSize);
+      ObjectSetInteger(0, objName, OBJPROP_COLOR, (i <= 1) ? clrWhite : dashColor);
+      ObjectSetString(0, objName, OBJPROP_TEXT, lines[i]);
+     }
+
+   ChartRedraw(0);
+  }
+//+------------------------------------------------------------------+
