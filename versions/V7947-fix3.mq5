@@ -1,11 +1,12 @@
 //+------------------------------------------------------------------+
-//|                                       BlackTideWaveSystem.mq5    |
-//|       Black Tide Wave System — Institutional Context Engine ***v7.94-7.1****|
-//|    (Refactored Engine Architecture, Profile History & Dashboard) |
+//| Black Tide Wave System V7                                        |
+//| Version: V7.947-Fix3                                             |
+//| Status: CURRENT BASELINE                                        |
+//| Build: Historical Replay / Performance Fix #3                   |
 //+------------------------------------------------------------------+
 #property copyright "BTW System - Institutional Edition"
-#property version     "7.947"
-#property description "Build version: 7.947-1"
+#property version   "7.947"
+#property description "Black Tide Wave System V7 | V7.947-Fix3 | CURRENT BASELINE"
 #property strict
 #property indicator_chart_window
 #property indicator_buffers 8
