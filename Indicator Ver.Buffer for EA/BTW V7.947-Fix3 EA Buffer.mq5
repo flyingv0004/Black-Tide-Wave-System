@@ -10,7 +10,7 @@
 #property strict
 #property indicator_chart_window
 #property indicator_buffers 13
-#property indicator_plots   8
+#property indicator_plots   13
 
 // กำหนด Enum และค่าลูกศร Wingdings ที่ขาดหายไป
 enum ENUM_ARROW_CHAR
@@ -2139,12 +2139,18 @@ int OnInit()
    SetIndexBuffer(6,g_pc,INDICATOR_DATA); PlotIndexSetString(6,PLOT_LABEL,"POC");
    SetIndexBuffer(7,g_im,INDICATOR_DATA); PlotIndexSetString(7,PLOT_LABEL,"IBMid");
 
-// EA interface only: do not add plots or alter the original 8 visible buffers.
-SetIndexBuffer(8,  g_sigType,  INDICATOR_CALCULATIONS);
-SetIndexBuffer(9,  g_sigEntry, INDICATOR_CALCULATIONS);
-SetIndexBuffer(10, g_sigSL,    INDICATOR_CALCULATIONS);
-SetIndexBuffer(11, g_sigTP1,   INDICATOR_CALCULATIONS);
-SetIndexBuffer(12, g_sigTP2,   INDICATOR_CALCULATIONS);
+// EA interface: expose signal values as public data buffers. The five added
+// plots use DRAW_NONE, so the original eight visible plots remain unchanged.
+SetIndexBuffer(8,  g_sigType,  INDICATOR_DATA);
+SetIndexBuffer(9,  g_sigEntry, INDICATOR_DATA);
+SetIndexBuffer(10, g_sigSL,    INDICATOR_DATA);
+SetIndexBuffer(11, g_sigTP1,   INDICATOR_DATA);
+SetIndexBuffer(12, g_sigTP2,   INDICATOR_DATA);
+for(int eaPlot=8; eaPlot<13; eaPlot++)
+{
+   PlotIndexSetInteger(eaPlot, PLOT_DRAW_TYPE, DRAW_NONE);
+   PlotIndexSetString(eaPlot, PLOT_LABEL, "EA Buffer " + IntegerToString(eaPlot));
+}
 ArraySetAsSeries(g_sigType,  false);
 ArraySetAsSeries(g_sigEntry, false);
 ArraySetAsSeries(g_sigSL,    false);
