@@ -514,6 +514,7 @@ double   g_f[], g_sl[], g_e2[], g_vw[], g_vh[], g_vl[], g_pc[], g_im[];
 // EA interface buffers (indices 8-12). INDICATOR_CALCULATIONS prevents extra plots.
 // Type: 1=S1 Long, 2=S1 Short, 3=S2 Long, 4=S2 Short; 0=no signal.
 double   g_sigType[], g_sigEntry[], g_sigSL[], g_sigTP1[], g_sigTP2[];
+datetime g_sigBufferLiveBarTime = 0;
 
 // Score Caching Buffers
 // v7.94-8 P0: per-stage profiling accumulators (diagnostic only, zero logic change)
@@ -540,7 +541,8 @@ string   g_mtfN[6]={"1M","5M","15M","30M","1H","4H"};
 ENUM_TIMEFRAMES g_mtfT[6]={PERIOD_M1,PERIOD_M5,PERIOD_M15,PERIOD_M30,PERIOD_H1,PERIOD_H4};
 int      g_hMTF_Fast[6], g_hMTF_Slow[6], g_hMTF_E200[6];
 
-int      g_lastSignalBar = -999; 
+int      g_lastSignalBar = -999;
+      g_sigBufferLiveBarTime = 0; 
 
 // Forward Declarations
 void DetectBroker();
@@ -2464,11 +2466,10 @@ int OnCalculate(const int rt, const int pc, const datetime &t[], const double &o
 
       _t0 = GetTickCount64();
       // EA interface:
-      // - On a full replay (pc==0), clear each bar before rebuilding its signal.
-      // - On incremental recalculation, clear ONLY the live bar. Preserve closed-bar
-      //   signals because CheckSignals() can early-return on cooldown and would not
-      //   rewrite a signal that was already emitted on that bar.
-      if(pc == 0 || i == rt - 1)
+      // Rebuild every bar on a full replay. During normal ticks, clear the live bar
+      // only once when its timestamp changes; do not erase a signal on every tick
+      // while CheckSignals() may early-return because of cooldown.
+      if(pc == 0 || (i == rt - 1 && g_sigBufferLiveBarTime != t[i]))
       {
          g_sigType[i]  = 0.0;
          g_sigEntry[i] = 0.0;
@@ -2476,6 +2477,7 @@ int OnCalculate(const int rt, const int pc, const datetime &t[], const double &o
          g_sigTP1[i]   = 0.0;
          g_sigTP2[i]   = 0.0;
       }
+      if(i == rt - 1) g_sigBufferLiveBarTime = t[i];
       CheckSignals(i,o,h,l,c,tv,t, i < (rt - 1), atrFastArr[i]);
       g_tCheckSig += GetTickCount64() - _t0;
    }
