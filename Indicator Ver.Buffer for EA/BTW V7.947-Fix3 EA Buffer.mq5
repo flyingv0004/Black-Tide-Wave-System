@@ -2463,13 +2463,19 @@ int OnCalculate(const int rt, const int pc, const datetime &t[], const double &o
       g_scoreBufBear[i] = CalculateInstitutionalScore(i, o, h, l, c, tv, false, t[i], atrFastArr[i]);
 
       _t0 = GetTickCount64();
-      // EA interface: clear this recalculated bar first so a vanished/revised signal
-      // cannot leave stale type/price values. DrawSig writes values only for a real signal.
-      g_sigType[i]  = 0.0;
-      g_sigEntry[i] = 0.0;
-      g_sigSL[i]    = 0.0;
-      g_sigTP1[i]   = 0.0;
-      g_sigTP2[i]   = 0.0;
+      // EA interface:
+      // - On a full replay (pc==0), clear each bar before rebuilding its signal.
+      // - On incremental recalculation, clear ONLY the live bar. Preserve closed-bar
+      //   signals because CheckSignals() can early-return on cooldown and would not
+      //   rewrite a signal that was already emitted on that bar.
+      if(pc == 0 || i == rt - 1)
+      {
+         g_sigType[i]  = 0.0;
+         g_sigEntry[i] = 0.0;
+         g_sigSL[i]    = 0.0;
+         g_sigTP1[i]   = 0.0;
+         g_sigTP2[i]   = 0.0;
+      }
       CheckSignals(i,o,h,l,c,tv,t, i < (rt - 1), atrFastArr[i]);
       g_tCheckSig += GetTickCount64() - _t0;
    }
