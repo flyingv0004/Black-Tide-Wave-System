@@ -1,0 +1,814 @@
+//+------------------------------------------------------------------+
+//|                                  Breakout_EMA_V19_5              |
+//|                                   Copyright 2026, Gemini AI      |
+//+------------------------------------------------------------------+
+// เพิ่มระบบ จับคู่ปิด แบบเปิดไม้ทดแทน/ไม่เปิดไม้ทดแทน
+
+#property copyright "Copyright 2026, Gemini AI"
+#property version   "19.5"
+#property strict
+
+#include <Trade\Trade.mqh>
+
+//--- [ADDED] ตัวเลือกประเภทราคา ---
+enum ENUM_PRICE_BASE {
+   PRICE_WICKS = 0, // High / Low (ไส้เทียน)
+   PRICE_BODY  = 1  // Open / Close (เนื้อเทียน)
+};
+
+//--- [V19.3] โหมดตัดออเดอร์เมื่อราคาข้ามเส้น EMA ของ MTF ---
+enum ENUM_CUT_MODE {
+   CUT_ON_CLOSE = 0, // ยืนยันด้วยราคาปิดของแท่ง
+   CUT_ON_TOUCH = 1  // ตัดทันทีเมื่อราคาข้ามเส้น
+
+};
+
+//--- [V19.5] โหมด Pair-Close ---
+enum ENUM_PAIR_MODE {
+   PAIR_REPLACE_FIXED_GRID = 0, // เปิดทดแทน (กริดไม่ขยับ)
+   PAIR_NO_REPLACE         = 1  // ไม่เปิดทดแทน (Martingale เดิมนับจากไม้ล่าสุดที่เหลือ)
+};
+
+input group "Strategy Settings"
+input int                InpLookback  = 35;    
+input ENUM_PRICE_BASE InpPriceType = PRICE_WICKS; // [NEW] เลือกประเภทราคาที่ใช้หาจุด Breakout
+input int                InpEMAPeriod = 200;    
+
+input group "EMA Cross Entry Settings (New Function)"
+input bool      InpUseEMACrossEntry = true;     // เปิด/ปิด ระบบราคาปิดตัด EMA
+input bool      InpCrossUseMTF      = true;     // [NEW] EMA Cross อ้างอิง MTF หรือไม่?
+input double    InpCrossTargetUSD   = 0.5;      // กำไรเป้าหมายเฉพาะระบบนี้ (USD)
+input int       InpCrossDelayMins   = 10;      // Delay หลังปิดออเดอร์ระบบนี้ (นาที)
+
+input group "EMA Cross Protection"
+input bool      InpFilterEMACross = true; 
+
+input group "MTF Trend Filter"
+input bool      InpUseMTF         = true;          
+input ENUM_TIMEFRAMES InpFilterMTF = PERIOD_H4; 
+
+//--- [NEW] ZigZag Settings ---
+input group "ZigZag Peak/Trough Settings"
+input bool      InpShowZigZag      = true;      // เปิด/ปิด การแสดงจุด Peak/Trough
+input bool      InpUseStructureFilter = true;   // [NEW] เปิด/ปิด การกรองไม้แรกด้วยโครงสร้างราคา (HH/HL/LL/LH)
+input int       InpZZDepth         = 12;        // ZigZag Depth
+input int       InpZZDeviation      = 5;         // ZigZag Deviation
+input int       InpZZBackstep       = 3;         // ZigZag Backstep
+
+input group "Trade Settings"
+input double    InpLotFirst   = 0.01;  
+input int       InpMagic      = 998877;
+
+input group "Martingale & MM (Shared System)"
+input bool      InpUseClassicMarty = true;      
+input double    InpLotMultiplier   = 1.3;  
+input int       InpMaxLevels        = 10;   
+input double    InpDistanceUSD     = 10.0;  
+input int       InpDelayMinutes    = 6;     
+
+input group "Hybrid Martingale Settings (New System)"
+input bool      InpUseHybridMarty   = false;     
+input int       InpHybridLookback   = 15;        
+input double    InpHybridMinDistUSD = 10.0;      
+
+input group "Safety Settings"
+input bool      InpUseMarginCheck   = true;      
+
+input group "Exit Strategy 1: ปิดกำไรด่วน (Original)"
+input bool      InpUseTargetProfit = true;  
+input double    InpTargetProfitUSD = 0.3;   
+
+input group "Exit Strategy 2: เทลลิ่ง"
+input bool      InpUseTrailing     = false; 
+input double    InpTrailingStartUSD = 0.5;  
+input double    InpTrailingStepUSD  = 0.2;  
+
+input group "Account Protection"
+input bool      InpUseMaxDD        = true;
+input double    InpMaxDrawdownPct  = 50.0;
+
+input group "Working Days"
+input bool      InpTradeMonday    = true;
+input bool      InpTradeTuesday   = true;
+input bool      InpTradeWednesday = true;
+input bool      InpTradeThursday  = true;
+input bool      InpTradeFriday    = true;
+
+input group "Break Time Settings"
+input bool      InpUseBreakTime    = true;
+input string    InpBreak1          = "15:00-01:00"; 
+input string    InpBreak2          = "05:30-07:30";
+input string    InpBreak3          = "11:30-13:45";
+input string    InpBreak4          = "";
+
+//--- [V19.3] ฟังก์ชันใหม่ (ปิดเป็นค่าเริ่มต้นทั้งหมด) ---
+input group "MTF EMA Block (บล็อกไม้แรกเมื่อใกล้/คาบเส้น EMA ของ MTF)"
+input bool      InpUseMTFBlock    = false;  // เปิด/ปิดฟังก์ชันบล็อก
+input double    InpMTFBlockDist   = 0.0;    // บล็อกเมื่อ |ราคา - EMA MTF| น้อยกว่าค่านี้ (หน่วยราคา, 0 = ไม่เช็คระยะ)
+input bool      InpMTFBlockTouch  = false;  // บล็อกเมื่อแท่ง MTF คาบเส้น EMA (High >= EMA >= Low)
+input int       InpMTFTouchBars   = 1;      // จำนวนแท่ง MTF ที่เช็คคาบเส้น (1 = แท่งปัจจุบัน, 2 = รวมแท่งก่อนหน้า, สูงสุด 5)
+
+input group "MTF EMA Cut (ตัดออเดอร์ทั้งชุดเมื่อราคาข้ามเส้น EMA ของ MTF)"
+input bool            InpUseMTFCut    = false;         // เปิด/ปิดฟังก์ชันตัดออเดอร์
+input ENUM_CUT_MODE   InpCutMode      = CUT_ON_CLOSE;  // โหมดตัด: ยืนยันปิดแท่ง / ตัดทันทีที่ข้ามเส้น
+input ENUM_TIMEFRAMES InpCutTF        = PERIOD_H4;     // TF ของแท่งที่ใช้ยืนยันการปิด (โหมดยืนยันปิดแท่งเท่านั้น)
+input double          InpCutBuffer    = 0.0;           // ต้องข้ามเส้นเกินระยะนี้ (หน่วยราคา)
+input int             InpCutDelayMins = 10;            // พักไม่เปิดไม้ใหม่หลังตัด (นาที)
+
+input group "Debug"
+input bool      InpDebugLog       = false;  // Print การบล็อกของ MTF EMA Block ลง Experts log (เฉพาะตอนสถานะเปลี่ยน)
+
+input group "Pair-Close (จับคู่ปิดไม้แก้ใน Martingale + เปิดไม้ทดแทน, กริดไม่ขยับ)"
+input bool      InpUsePairClose   = false;  // เปิด/ปิดระบบจับคู่ปิด
+input ENUM_PAIR_MODE InpPairMode  = PAIR_REPLACE_FIXED_GRID; // โหมด: เปิดทดแทน (กริดไม่ขยับ) / ไม่เปิดทดแทน (เปลี่ยนโหมดตอนไม่มีไม้ค้างจะปลอดภัยที่สุด)
+input int       InpPairStartCount = 3;      // เริ่มจับคู่เมื่อมีไม้เปิดอยู่จริงอย่างน้อยกี่ไม้ (ขั้นต่ำ 2)
+input double    InpPairProfitUSD  = 1.0;    // กำไรขั้นต่ำของคู่ (ไม้ใหม่สุด + ไม้ที่ P/L ดีที่สุด) ที่จะสั่งปิดคู่ (สกุลเงินบัญชี)
+input bool      InpUsePairMaxLot  = false;  // เปิดเพดาน lot ของไม้ที่จะถูกจับคู่/เปิดทดแทน
+input double    InpPairMaxLot     = 0.0;    // ถ้า lot ของไม้ใหม่สุดเกินค่านี้ จะไม่จับคู่ (ใช้เมื่อเปิดสวิตช์ด้านบน)
+
+// --- Global Variables ---
+int      handleEMA, handleMTF, handleZZ; 
+datetime lastCloseTime = 0;
+datetime lastCandleTime = 0;
+double   highestProfitUSD = 0; 
+string   mtfStatus = "INITIALIZING...";
+string   blockStatus = "READY";
+CTrade   trade;
+bool     isCrossSystemActive = false; // เช็คว่าออเดอร์มาจากระบบ Cross หรือไม่
+
+// --- [V19.3] ตัวแปรของฟังก์ชันใหม่ ---
+double   mtfEmaNow       = 0;      // ค่า EMA ของ MTF ล่าสุด
+bool     mtfEmaOk        = false;  // ค่า EMA พร้อมใช้งานหรือไม่
+bool     mtfCutPending   = false;  // สั่งตัดแล้วแต่ยังปิดไม่หมด (ลองปิดซ้ำทุก tick)
+datetime lastCutTime     = 0;      // เวลาที่ตัดออเดอร์ด้วยฟังก์ชัน MTF Cut (delay แยกจาก lastCloseTime เดิม)
+
+// --- [V19.5] ตัวแปรของ Pair-Close ---
+double   pcRealized    = 0;      // กำไรที่ปิดคู่ไปแล้วของชุดปัจจุบัน
+int      pcExtra       = 0;      // จำนวนชั้นกริดที่ "หายไป" จากจำนวนไม้จริง (ใช้คงเพดาน InpMaxLevels)
+long     pcAnchorMsc   = 0;      // เวลา (ms) ของชั้นล่าสุดของกริด
+double   pcAnchorPrice = 0;      // ราคาเปิดของชั้นล่าสุดของกริด (จุดอ้างอิงกริด)
+double   pcAnchorLot   = 0;      // lot ของชั้นล่าสุดของกริด
+bool     pcLoaded      = false;  // โหลดสถานะจาก Global Variable แล้วหรือยัง
+
+//+------------------------------------------------------------------+
+int OnInit() {
+   handleEMA = iMA(_Symbol, _Period, InpEMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
+   handleMTF = iMA(_Symbol, InpFilterMTF, InpEMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
+   handleZZ = iCustom(_Symbol, _Period, "Examples\\ZigZag", InpZZDepth, InpZZDeviation, InpZZBackstep);
+
+   if(handleEMA == INVALID_HANDLE || handleMTF == INVALID_HANDLE || handleZZ == INVALID_HANDLE) return(INIT_FAILED);
+   trade.SetExpertMagicNumber(InpMagic);
+   
+   SyncMTFData();
+   UpdateDashboard();
+   return(INIT_SUCCEEDED);
+}
+
+void OnDeinit(const int reason) {
+   ObjectDelete(0, "Line_Upper");
+   ObjectDelete(0, "Line_Lower");
+   ObjectsDeleteAll(0, "ZZ_");
+   ObjectsDeleteAll(0, "ZZLN_"); 
+   Comment("");
+}
+
+void OnTick() {
+   CheckProfitAndSafety();
+   SyncMTFData(); 
+   UpdateMTFEma();     // [V19.3] อ่านค่า EMA ของ MTF
+   CheckMTFCut();      // [V19.3] ตัดออเดอร์เมื่อราคาข้ามเส้น (ทำงานก่อนเช็ค delay)
+   ManagePairClose();     // [V19.5] จับคู่ปิดไม้แก้ + เปิดไม้ทดแทน
+   CheckPairSetClose();   // [V19.5] ปิดทั้งชุดเมื่อกำไรลอย + กำไรที่ปิดคู่ไปแล้ว ถึงเป้า
+   UpdateDashboard();
+   
+   if(InpShowZigZag) DrawZigZagMarkers();
+
+   // [V19.3] delay หลังตัดด้วย MTF Cut (แยกจาก delay เดิม)
+   if(lastCutTime > 0 && TimeCurrent() < lastCutTime + (InpCutDelayMins * 60)) {
+      blockStatus = "CUT DELAY ACTIVE (" + (string)InpCutDelayMins + "m)";
+      return;
+   }
+
+   // --- เช็ค Delay แยกตามระบบ ---
+   int currentDelay = isCrossSystemActive ? InpCrossDelayMins : InpDelayMinutes;
+   if(lastCloseTime > 0 && TimeCurrent() < lastCloseTime + (currentDelay * 60)) {
+      blockStatus = "DELAY ACTIVE (" + (string)currentDelay + "m)";
+      return;
+   }
+
+   int totalPos = 0;
+   double lastOpenPrice = 0, lastOpenLot = 0;
+   ENUM_POSITION_TYPE lastType = (ENUM_POSITION_TYPE)-1;
+
+   for(int i = PositionsTotal() - 1; i >= 0; i--) {
+      ulong ticket = PositionGetTicket(i);
+      if(PositionSelectByTicket(ticket) && PositionGetInteger(POSITION_MAGIC) == InpMagic && PositionGetString(POSITION_SYMBOL) == _Symbol) {
+         totalPos++;
+         if(lastOpenPrice == 0) {
+            lastOpenPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+            lastOpenLot   = PositionGetDouble(POSITION_VOLUME);
+            lastType      = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+         }
+      }
+   }
+
+   ApplyGridAnchor(totalPos, lastOpenPrice, lastOpenLot);   // [V19.5] ใช้จุดอ้างอิงกริดที่เก็บไว้ (ปิดอยู่ = ไม่ทำอะไร)
+   datetime currentCandle = iTime(_Symbol, _Period, 0);
+   if(lastCandleTime == currentCandle) return; 
+
+   if(totalPos == 0) {
+      blockStatus = "READY";
+      highestProfitUSD = 0;
+      isCrossSystemActive = false; // Reset ระบบ
+
+      if(InpUseMTF && StringFind(mtfStatus, "INITIALIZING") >= 0) {
+         blockStatus = "WAITING FOR MTF DATA...";
+         return; 
+      }
+
+      if(!IsWorkingDay()) { blockStatus = "NON-TRADING DAY"; return; }
+      if(IsBreakTime()) { blockStatus = "BREAK TIME"; return; }
+      if(IsMTFEmaBlocked()) return;   // [V19.3] บล็อกไม้แรกเมื่อใกล้/คาบเส้น EMA ของ MTF
+
+      double ema[]; ArraySetAsSeries(ema, true);
+      if(CopyBuffer(handleEMA, 0, 0, 3, ema) < 3) return;
+
+      double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      double close1 = iClose(_Symbol, _Period, 1);
+      double open1  = iOpen(_Symbol, _Period, 1);
+
+      // --- [NEW] 1. ระบบ EMA CROSS ENTRY ---
+      if(InpUseEMACrossEntry) {
+         bool crossCanBuy = true;
+         bool crossCanSell = true;
+         
+         // เช็ค MTF เฉพาะของระบบ Cross ถ้าถูกสั่งให้เปิดใช้
+         if(InpCrossUseMTF && InpUseMTF) {
+            if(StringFind(mtfStatus, "BUY ONLY") >= 0) crossCanSell = false;
+            if(StringFind(mtfStatus, "SELL ONLY") >= 0) crossCanBuy = false;
+         }
+
+         if(open1 < ema[1] && close1 > ema[1] && crossCanBuy) { // ตัดขึ้น
+            if(trade.Buy(InpLotFirst, _Symbol, ask, 0, 0)) { 
+               lastCandleTime = currentCandle; 
+               blockStatus = "EMA CROSS: BUY"; 
+               isCrossSystemActive = true; 
+               return; 
+            }
+         }
+         if(open1 > ema[1] && close1 < ema[1] && crossCanSell) { // ตัดลง
+            if(trade.Sell(InpLotFirst, _Symbol, bid, 0, 0)) { 
+               lastCandleTime = currentCandle; 
+               blockStatus = "EMA CROSS: SELL"; 
+               isCrossSystemActive = true; 
+               return; 
+            }
+         }
+      }
+
+      // --- 2. ระบบ BREAKOUT เดิม ---
+      double upperSource[], lowerSource[];
+      ArraySetAsSeries(upperSource, true); ArraySetAsSeries(lowerSource, true);
+      if(InpPriceType == PRICE_WICKS) {
+         if(CopyHigh(_Symbol, _Period, 0, InpLookback+1, upperSource) < InpLookback+1 || CopyLow(_Symbol, _Period, 0, InpLookback+1, lowerSource) < InpLookback+1) return;
+      } else {
+         double o[], c[]; ArraySetAsSeries(o, true); ArraySetAsSeries(c, true);
+         if(CopyOpen(_Symbol, _Period, 0, InpLookback+1, o) < InpLookback+1 || CopyClose(_Symbol, _Period, 0, InpLookback+1, c) < InpLookback+1) return;
+         ArrayResize(upperSource, InpLookback+1); ArrayResize(lowerSource, InpLookback+1);
+         for(int i=0; i<=InpLookback; i++) { upperSource[i] = MathMax(o[i], c[i]); lowerSource[i] = MathMin(o[i], c[i]); }
+      }
+
+      if(InpFilterEMACross) {
+         double h_curr[], l_curr[]; ArraySetAsSeries(h_curr, true); ArraySetAsSeries(l_curr, true);
+         CopyHigh(_Symbol, _Period, 0, 2, h_curr); CopyLow(_Symbol, _Period, 0, 2, l_curr);
+         if((h_curr[0] >= ema[0] && l_curr[0] <= ema[0]) || (h_curr[1] >= ema[1] && l_curr[1] <= ema[1]) || (ask >= ema[0] && bid <= ema[0])) {
+            blockStatus = "BLOCK: Candle Cross EMA";
+            return; 
+         }
+      }
+
+      bool canBuy = true, canSell = true;
+      if(InpUseMTF) {
+         if(StringFind(mtfStatus, "BUY ONLY") >= 0) canSell = false;
+         if(StringFind(mtfStatus, "SELL ONLY") >= 0) canBuy = false;
+      }
+      if(InpUseStructureFilter) {
+         string currentStr = GetCurrentStructure();
+         if(canBuy && (currentStr == "LL" || currentStr == "LH")) { canBuy = false; blockStatus = "STRUC BLOCK: BEARISH"; }
+         if(canSell && (currentStr == "HH" || currentStr == "HL")) { canSell = false; blockStatus = "STRUC BLOCK: BULLISH"; }
+      }
+
+      double maxH = upperSource[ArrayMaximum(upperSource, 1, InpLookback)];
+      double minL = lowerSource[ArrayMinimum(lowerSource, 1, InpLookback)];
+      DrawLine("Line_Upper", maxH, clrDodgerBlue);
+      DrawLine("Line_Lower", minL, clrOrange);
+
+      if(ask > maxH && ask > ema[0] && canBuy) {
+         if(trade.Buy(InpLotFirst, _Symbol, ask, 0, 0)) { lastCandleTime = currentCandle; blockStatus = "BUY OPENED"; }
+      }
+      else if(bid < minL && bid < ema[0] && canSell) {
+         if(trade.Sell(InpLotFirst, _Symbol, bid, 0, 0)) { lastCandleTime = currentCandle; blockStatus = "SELL OPENED"; }
+      }
+   }
+   else if(totalPos < InpMaxLevels) {
+      // --- ระบบ Martingale (ใช้งานร่วมกันได้ทั้งหมด) ---
+      blockStatus = "MARTINGALE ACTIVE (" + (string)totalPos + ")";
+      double currentAsk = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      double currentBid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      double nextLot = CalculateLot(lastOpenLot);
+      
+      bool classicSignal = false;
+      if(InpUseClassicMarty) {
+         if(lastType == POSITION_TYPE_BUY && (lastOpenPrice - currentAsk) >= InpDistanceUSD) classicSignal = true;
+         if(lastType == POSITION_TYPE_SELL && (currentBid - lastOpenPrice) >= InpDistanceUSD) classicSignal = true;
+      }
+
+      bool hybridSignal = false;
+      if(InpUseHybridMarty) {
+         double h_high[], h_low[]; ArraySetAsSeries(h_high, true); ArraySetAsSeries(h_low, true);
+         if(CopyHigh(_Symbol, _Period, 1, InpHybridLookback, h_high) > 0 && CopyLow(_Symbol, _Period, 1, InpHybridLookback, h_low) > 0) {
+            double currentMin = h_low[ArrayMinimum(h_low)];
+            double currentMax = h_high[ArrayMaximum(h_high)];
+            if(lastType == POSITION_TYPE_BUY && (lastOpenPrice - currentAsk) >= InpHybridMinDistUSD && currentAsk <= currentMin) hybridSignal = true;
+            if(lastType == POSITION_TYPE_SELL && (currentBid - lastOpenPrice) >= InpHybridMinDistUSD && currentBid >= currentMax) hybridSignal = true;
+         }
+      }
+
+      if(classicSignal || hybridSignal) {
+         if(CheckMarginSafe(nextLot, lastType)) {
+            if(lastType == POSITION_TYPE_BUY) { if(trade.Buy(nextLot, _Symbol, currentAsk, 0, 0)) lastCandleTime = currentCandle; }
+            else if(lastType == POSITION_TYPE_SELL) { if(trade.Sell(nextLot, _Symbol, currentBid, 0, 0)) lastCandleTime = currentCandle; }
+         } else { blockStatus = "MARGIN LIMIT REACHED"; }
+      }
+   }
+}
+
+// --- ฟังก์ชันกำไรรวมของบัญชีวันนี้ ---
+double GetAccountTodayProfit() {
+   double total = 0;
+   datetime start = iTime(_Symbol, PERIOD_D1, 0);
+   if(HistorySelect(start, TimeCurrent())) {
+      int totalDeals = HistoryDealsTotal();
+      for(int i = 0; i < totalDeals; i++) {
+         ulong ticket = HistoryDealGetTicket(i);
+         if(ticket > 0) total += HistoryDealGetDouble(ticket, DEAL_PROFIT) + HistoryDealGetDouble(ticket, DEAL_COMMISSION) + HistoryDealGetDouble(ticket, DEAL_SWAP);
+      }
+   }
+   return NormalizeDouble(total, 2);
+}
+
+// --- ฟังก์ชันกำไรของบอทตัวนี้วันนี้ ---
+double GetBotTodayProfit() {
+   double total = 0;
+   datetime start = iTime(_Symbol, PERIOD_D1, 0);
+   if(HistorySelect(start, TimeCurrent())) {
+      int totalDeals = HistoryDealsTotal();
+      for(int i = 0; i < totalDeals; i++) {
+         ulong ticket = HistoryDealGetTicket(i);
+         if(ticket > 0 && HistoryDealGetInteger(ticket, DEAL_MAGIC) == InpMagic) {
+            total += HistoryDealGetDouble(ticket, DEAL_PROFIT) + HistoryDealGetDouble(ticket, DEAL_COMMISSION) + HistoryDealGetDouble(ticket, DEAL_SWAP);
+         }
+      }
+   }
+   return NormalizeDouble(total, 2);
+}
+
+// --- ฟังก์ชันดึงโครงสร้างราคาล่าสุด ---
+string GetCurrentStructure() {
+   double zz[]; ArraySetAsSeries(zz, true);
+   if(CopyBuffer(handleZZ, 0, 0, 250, zz) <= 0) return "UNKNOWN";
+   double lastH = 0, prevH = 0, lastL = 0, prevL = 0; int hCount = 0, lCount = 0;
+   for(int i = 0; i < 250; i++) {
+      if(zz[i] > 0) {
+         bool isPeak = (MathAbs(iHigh(_Symbol, _Period, i) - zz[i]) < _Point * 10);
+         if(isPeak) { if(hCount == 0) lastH = zz[i]; else if(hCount == 1) prevH = zz[i]; hCount++; }
+         else { if(lCount == 0) lastL = zz[i]; else if(lCount == 1) prevL = zz[i]; lCount++; }
+      }
+      if(hCount >= 2 && lCount >= 2) break;
+   }
+   if(hCount < 2 || lCount < 2) return "NEUTRAL";
+   if(lastH > prevH && lastL >= prevL) return "HH"; 
+   if(lastL < prevL && lastH <= prevH) return "LL";
+   if(lastH < prevH && lastL > prevL) return "LH"; 
+   if(lastH > prevH && lastL < prevL) return "HL"; 
+   return "TRANSITION";
+}
+
+void DrawZigZagMarkers() {
+   double zzBuffer[]; ArraySetAsSeries(zzBuffer, true);
+   if(CopyBuffer(handleZZ, 0, 0, 300, zzBuffer) <= 0) return;
+   ObjectsDeleteAll(0, "ZZ_"); ObjectsDeleteAll(0, "ZZLN_"); 
+   double lastH = 0, lastL = 0, currP = 0, prevP = 0; int lineCount = 0; datetime currT = 0, prevT = 0;
+   for(int i = 250; i >= 0; i--) { 
+      if(zzBuffer[i] > 0) {
+         double val = zzBuffer[i]; datetime time = iTime(_Symbol, _Period, i); string label = ""; color clr = clrGray;
+         bool isPeak = (MathAbs(iHigh(_Symbol, _Period, i) - val) < _Point * 10);
+         if(isPeak) { if(lastH > 0) { label = (val > lastH) ? "HH" : "LH"; clr = (val > lastH) ? clrLime : clrRed; } else label = "H"; lastH = val; }
+         else { if(lastL > 0) { label = (val > lastL) ? "HL" : "LL"; clr = (val > lastL) ? clrLime : clrRed; } else label = "L"; lastL = val; }
+         string name = "ZZ_" + (string)time;
+         if(ObjectCreate(0, name, OBJ_TEXT, 0, time, val)) { ObjectSetString(0, name, OBJPROP_TEXT, label); ObjectSetInteger(0, name, OBJPROP_COLOR, clr); ObjectSetInteger(0, name, OBJPROP_ANCHOR, isPeak ? ANCHOR_BOTTOM : ANCHOR_TOP); }
+         prevP = currP; prevT = currT; currP = val; currT = time;
+         if(prevP > 0) { string ln = "ZZLN_" + (string)lineCount++; ObjectCreate(0, ln, OBJ_TREND, 0, currT, currP, prevT, prevP); ObjectSetInteger(0, ln, OBJPROP_RAY_RIGHT, false); ObjectSetInteger(0, ln, OBJPROP_STYLE, STYLE_DOT); }
+      }
+   }
+}
+
+bool CheckMarginSafe(double lot, ENUM_POSITION_TYPE type) {
+   double margin; ENUM_ORDER_TYPE ot = (type == POSITION_TYPE_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+   if(!OrderCalcMargin(ot, _Symbol, lot, SymbolInfoDouble(_Symbol, SYMBOL_ASK), margin)) return false;
+   return (AccountInfoDouble(ACCOUNT_MARGIN_FREE) > margin);
+}
+
+void SyncMTFData() {
+   if(!InpUseMTF) { mtfStatus = "MTF: OFF"; return; }
+   double mtfEMA[], mtfClose[]; ArraySetAsSeries(mtfEMA, true); ArraySetAsSeries(mtfClose, true);
+   if(CopyBuffer(handleMTF, 0, 0, 1, mtfEMA) > 0 && CopyClose(_Symbol, InpFilterMTF, 0, 1, mtfClose) > 0) {
+      if(mtfClose[0] > mtfEMA[0]) mtfStatus = "MTF [" + EnumToString(InpFilterMTF) + "]: BUY ONLY";
+      else if(mtfClose[0] < mtfEMA[0]) mtfStatus = "MTF [" + EnumToString(InpFilterMTF) + "]: SELL ONLY";
+      else mtfStatus = "MTF [" + EnumToString(InpFilterMTF) + "]: NEUTRAL";
+   } else mtfStatus = "MTF: INITIALIZING...";
+}
+
+void CheckProfitAndSafety() {
+   double totalProfitUSD = 0; int count = 0;
+   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   for(int i = PositionsTotal() - 1; i >= 0; i--) {
+      if(PositionSelectByTicket(PositionGetTicket(i)) && PositionGetInteger(POSITION_MAGIC) == InpMagic && PositionGetString(POSITION_SYMBOL) == _Symbol) {
+         totalProfitUSD += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+         count++;
+      }
+   }
+   if(count == 0) return;
+
+   double currentTarget = isCrossSystemActive ? InpCrossTargetUSD : InpTargetProfitUSD;
+
+   if(InpUseMaxDD && ((totalProfitUSD / balance) * 100.0) <= -MathAbs(InpMaxDrawdownPct)) CloseAllPositions();
+   if(totalProfitUSD >= currentTarget) { CloseAllPositions(); lastCloseTime = TimeCurrent(); return; }
+   if(InpUseTrailing) {
+      if(totalProfitUSD > highestProfitUSD) highestProfitUSD = totalProfitUSD;
+      if(highestProfitUSD >= InpTrailingStartUSD && totalProfitUSD <= (highestProfitUSD - InpTrailingStepUSD)) { CloseAllPositions(); lastCloseTime = TimeCurrent(); highestProfitUSD = 0; }
+   }
+}
+
+void UpdateDashboard() {
+   string mode = isCrossSystemActive ? "EMA CROSS (New)" : "BREAKOUT (Original)";
+   string out = "====================================\n";
+   out += " Breakout EMA V19.2 HYBRID \n";
+   out += "====================================\n";
+   out += " Active Mode  : " + mode + "\n";
+   out += " Today Account Profit : " + (string)GetAccountTodayProfit() + " USD\n";
+   out += " Today Bot Profit     : " + (string)GetBotTodayProfit() + " USD\n";
+   out += " Target USD   : " + (string)(isCrossSystemActive ? InpCrossTargetUSD : InpTargetProfitUSD) + "\n";
+   out += " " + mtfStatus + "\n";
+   if(mtfEmaOk) out += " MTF EMA     : " + DoubleToString(mtfEmaNow, _Digits) + " | Dist " + DoubleToString(SymbolInfoDouble(_Symbol, SYMBOL_BID) - mtfEmaNow, 2) + "\n";
+   out += " MTF Block/Cut: " + (InpUseMTFBlock ? "ON" : "OFF") + " / " + (InpUseMTFCut ? (InpCutMode == CUT_ON_CLOSE ? "CLOSE" : "TOUCH") : "OFF") + "\n";
+   out += " Status       : " + blockStatus + "\n";
+   out += "====================================";
+   Comment(out);
+}
+
+bool IsBreakTime() {
+   if(!InpUseBreakTime) return false;
+   MqlDateTime dt; TimeToStruct(TimeCurrent(), dt); int currM = dt.hour * 60 + dt.min;
+   string breaks[4] = {InpBreak1, InpBreak2, InpBreak3, InpBreak4};
+   for(int i=0; i<4; i++) {
+      if(breaks[i] == "" || StringLen(breaks[i]) < 5) continue;
+      string pts[]; if(StringSplit(breaks[i], '-', pts) == 2) {
+         string s_p[], e_p[]; if(StringSplit(pts[0], ':', s_p) == 2 && StringSplit(pts[1], ':', e_p) == 2) {
+            int start = (int)StringToInteger(s_p[0])*60 + (int)StringToInteger(s_p[1]);
+            int end   = (int)StringToInteger(e_p[0])*60 + (int)StringToInteger(e_p[1]);
+            if(start < end) { if(currM >= start && currM <= end) return true; }
+            else { if(currM >= start || currM <= end) return true; }
+         }
+      }
+   }
+   return false;
+}
+
+bool IsWorkingDay() {
+   MqlDateTime dt; TimeCurrent(dt);
+   if(dt.day_of_week == 1 && !InpTradeMonday) return false;
+   if(dt.day_of_week == 2 && !InpTradeTuesday) return false;
+   if(dt.day_of_week == 3 && !InpTradeWednesday) return false;
+   if(dt.day_of_week == 4 && !InpTradeThursday) return false;
+   if(dt.day_of_week == 5 && !InpTradeFriday) return false;
+   return true;
+}
+
+void CloseAllPositions() {
+   for(int i = PositionsTotal() - 1; i >= 0; i--) {
+      ulong t = PositionGetTicket(i); if(PositionSelectByTicket(t) && PositionGetInteger(POSITION_MAGIC) == InpMagic) trade.PositionClose(t);
+   }
+}
+
+double CalculateLot(double lastLot) {
+   double n = lastLot * InpLotMultiplier, s = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   return NormalizeDouble(MathMin(MathMax(MathCeil(n/s)*s, SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN)), SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX)), 2);
+}
+
+void DrawLine(string name, double price, color clr) {
+   if(ObjectFind(0, name) < 0) ObjectCreate(0, name, OBJ_HLINE, 0, 0, price);
+   ObjectSetDouble(0, name, OBJPROP_PRICE, price); ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+}
+
+//+------------------------------------------------------------------+
+//| [V19.3] ฟังก์ชันใหม่                                              |
+//+------------------------------------------------------------------+
+
+// --- Print การบล็อกเฉพาะตอนสถานะเปลี่ยน และเฉพาะเมื่อเปิด InpDebugLog ---
+void DebugBlockLog(string s) {
+   static string last = "";
+   if(!InpDebugLog || s == last) return;
+   last = s;
+   if(s != "") Print("MTF BLOCK: ", s);
+}
+
+// --- อ่านค่า EMA ของ MTF (1 ค่าต่อ tick) ---
+void UpdateMTFEma() {
+   double b[]; ArraySetAsSeries(b, true);
+   if(CopyBuffer(handleMTF, 0, 0, 1, b) > 0 && b[0] > 0) { mtfEmaNow = b[0]; mtfEmaOk = true; }
+   else mtfEmaOk = false;
+}
+
+// --- ฟังก์ชัน 1: บล็อกไม้แรกเมื่อราคาใกล้ หรือแท่ง MTF คาบเส้น EMA ---
+bool IsMTFEmaBlocked() {
+   if(!InpUseMTFBlock) return false;
+   if(!mtfEmaOk) { blockStatus = "BLOCK: MTF EMA NOT READY"; return true; }
+
+   // เช็คระยะ (ทั้งเหนือและใต้เส้น)
+   if(InpMTFBlockDist > 0) {
+      double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      if(MathAbs(bid - mtfEmaNow) < InpMTFBlockDist) {
+         blockStatus = "BLOCK: Near MTF EMA";
+         DebugBlockLog(blockStatus);
+         return true;
+      }
+   }
+
+   // เช็คแท่ง MTF คาบเส้น (เช็คแท่งที่ยังวิ่งอยู่ทุก tick ไม่ต้องรอปิด)
+   if(InpMTFBlockTouch) {
+      int n = MathMax(1, MathMin(InpMTFTouchBars, 5));
+      double e[]; ArraySetAsSeries(e, true);
+      if(CopyBuffer(handleMTF, 0, 0, n, e) < n) { blockStatus = "BLOCK: MTF EMA NOT READY"; return true; }
+      for(int k = 0; k < n; k++) {
+         double hi = iHigh(_Symbol, InpFilterMTF, k), lo = iLow(_Symbol, InpFilterMTF, k);
+         if(hi > 0 && lo > 0 && hi >= e[k] && lo <= e[k]) {
+            blockStatus = "BLOCK: MTF Candle Touch EMA";
+            DebugBlockLog(blockStatus);
+            return true;
+         }
+      }
+   }
+
+   DebugBlockLog("");
+   return false;
+}
+
+// --- ฟังก์ชัน 2: ตัดออเดอร์ทั้งชุดเมื่อราคาข้ามเส้น EMA ของ MTF ---
+void CheckMTFCut() {
+   if(!InpUseMTFCut) return;
+
+   int count = 0; double totalProfit = 0;
+   datetime firstTime = 0; double firstPrice = 0;
+   ENUM_POSITION_TYPE type = (ENUM_POSITION_TYPE)-1;
+   for(int i = PositionsTotal() - 1; i >= 0; i--) {
+      ulong ticket = PositionGetTicket(i);
+      if(PositionSelectByTicket(ticket) && PositionGetInteger(POSITION_MAGIC) == InpMagic && PositionGetString(POSITION_SYMBOL) == _Symbol) {
+         count++;
+         totalProfit += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+         datetime t = (datetime)PositionGetInteger(POSITION_TIME);
+         if(firstTime == 0 || t < firstTime) {   // ไม้เก่าสุด = ไม้แรกของชุด
+            firstTime  = t;
+            firstPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+            type       = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+         }
+      }
+   }
+   if(count == 0) { mtfCutPending = false; return; }
+
+   // สั่งตัดไปแล้วแต่ยังเหลือไม้ ลองปิดซ้ำ
+   if(mtfCutPending) { CloseAllPositions(); return; }
+
+   bool cut = false; double ema = 0, refPrice = 0; string modeTxt = "";
+
+   if(InpCutMode == CUT_ON_CLOSE) {
+      // ทำงานเมื่อขึ้นแท่งใหม่ของ InpCutTF เท่านั้น
+      static datetime lastCheckedBar = 0;
+      datetime barTime = iTime(_Symbol, InpCutTF, 0);
+      if(barTime == 0) return;
+      if(lastCheckedBar == 0) { lastCheckedBar = barTime; return; }  // ไม่ตัดทันทีตอนโหลด EA
+      if(barTime == lastCheckedBar) return;
+      lastCheckedBar = barTime;
+      if(barTime <= firstTime) return;   // แท่งที่เพิ่งปิดต้องปิดหลังเปิดไม้แรก (กันเปิดแล้วตัดทันที)
+
+      double close1 = iClose(_Symbol, InpCutTF, 1);
+      int sh = (InpCutTF == InpFilterMTF) ? 1 : 0;   // TF เดียวกับเส้น: ใช้ EMA ของแท่งที่ปิด
+      double eb[]; ArraySetAsSeries(eb, true);
+      if(CopyBuffer(handleMTF, 0, sh, 1, eb) < 1 || eb[0] <= 0 || close1 <= 0) return;
+      ema = eb[0]; refPrice = close1; modeTxt = "CLOSE";
+      if(type == POSITION_TYPE_BUY  && close1 < ema - InpCutBuffer) cut = true;
+      if(type == POSITION_TYPE_SELL && close1 > ema + InpCutBuffer) cut = true;
+   }
+   else {
+      if(!mtfEmaOk) return;
+      ema = mtfEmaNow; modeTxt = "TOUCH";
+      // ตัดเฉพาะเมื่อไม้แรกเปิดอยู่ฝั่งที่ถูกของเส้น (กันชุดที่เปิดผิดฝั่งถูกตัดทันที)
+      if(type == POSITION_TYPE_BUY && firstPrice > ema) {
+         double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+         if(bid <= ema - InpCutBuffer) { cut = true; refPrice = bid; }
+      }
+      if(type == POSITION_TYPE_SELL && firstPrice < ema) {
+         double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+         if(ask >= ema + InpCutBuffer) { cut = true; refPrice = ask; }
+      }
+   }
+
+   if(!cut) return;
+
+   // Print เฉพาะตอนตัดออเดอร์จริง (หนึ่งบรรทัดต่อเหตุการณ์)
+   PrintFormat("MTF CUT [%s] %s: price=%.2f EMA=%.2f buffer=%.2f positions=%d profit=%.2f",
+               modeTxt, (type == POSITION_TYPE_BUY ? "BUY" : "SELL"), refPrice, ema, InpCutBuffer, count, totalProfit);
+   mtfCutPending = true;
+   lastCutTime   = TimeCurrent();
+   blockStatus   = "MTF CUT";
+   CloseAllPositions();
+}
+
+
+//+------------------------------------------------------------------+
+//| [V19.5] Pair-Close: จับคู่ปิดไม้แก้ + เปิดไม้ทดแทน (กริดไม่ขยับ)    |
+//| จับ "ไม้ใหม่สุด" กับ "ไม้ที่ P/L ดีที่สุดในไม้ที่เหลือ" ปิดคู่เมื่อ    |
+//| กำไรรวมถึงเป้า แล้วเปิดไม้ทดแทน lot เท่าไม้ใหม่สุดที่ราคาปัจจุบัน    |
+//| ไม้ทดแทนติดคอมเมนต์ "BB-PC" เพื่อแยกจากไม้ชั้นของกริด               |
+//| จุดอ้างอิงกริดเก็บแยกไว้ (ราคา/lot ของชั้นล่าสุดจริง) ไม่ขยับตามไม้ทดแทน|
+//+------------------------------------------------------------------+
+string PcKey(string n) { return "BBPC_" + (string)InpMagic + "_" + _Symbol + "_" + n; }
+
+void PcSave() {
+   GlobalVariableSet(PcKey("real"),  pcRealized);
+   GlobalVariableSet(PcKey("extra"), (double)pcExtra);
+   GlobalVariableSet(PcKey("ancT"),  (double)pcAnchorMsc);
+   GlobalVariableSet(PcKey("ancP"),  pcAnchorPrice);
+   GlobalVariableSet(PcKey("ancL"),  pcAnchorLot);
+}
+
+void PcClear() {
+   pcRealized = 0; pcExtra = 0; pcAnchorMsc = 0; pcAnchorPrice = 0; pcAnchorLot = 0;
+   GlobalVariableDel(PcKey("real"));  GlobalVariableDel(PcKey("extra"));
+   GlobalVariableDel(PcKey("ancT"));  GlobalVariableDel(PcKey("ancP")); GlobalVariableDel(PcKey("ancL"));
+}
+
+// โหลดสถานะครั้งแรก (ทนต่อการโหลด EA ใหม่/รีสตาร์ทเทอร์มินัล)
+void PcLoad() {
+   if(pcLoaded) return;
+   pcLoaded = true;
+   if(GlobalVariableCheck(PcKey("ancT"))) {
+      pcAnchorMsc   = (long)GlobalVariableGet(PcKey("ancT"));
+      pcAnchorPrice = GlobalVariableGet(PcKey("ancP"));
+      pcAnchorLot   = GlobalVariableGet(PcKey("ancL"));
+   }
+   if(GlobalVariableCheck(PcKey("real")))  pcRealized = GlobalVariableGet(PcKey("real"));
+   if(GlobalVariableCheck(PcKey("extra"))) pcExtra    = (int)GlobalVariableGet(PcKey("extra"));
+}
+
+// Print แบบจำกัดความถี่ (อย่างน้อย 60 วินาทีต่อครั้ง) กัน log ท่วมกรณีล้มเหลวซ้ำ
+void PcPrintThrottled(string msg) {
+   static datetime lastPrint = 0;
+   if(TimeCurrent() - lastPrint < 60) return;
+   lastPrint = TimeCurrent();
+   Print(msg);
+}
+
+// อัปเดตจุดอ้างอิงกริดจาก "ไม้ล่าสุดที่ไม่ใช่ไม้ทดแทน" ถ้ามีชั้นใหม่เปิดหลังจุดที่เก็บไว้
+void PcSyncAnchor() {
+   long bestMsc = 0; double bp = 0, bl = 0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--) {
+      ulong t = PositionGetTicket(i);
+      if(!PositionSelectByTicket(t)) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpMagic || PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      if(StringFind(PositionGetString(POSITION_COMMENT), "BB-PC") >= 0) continue;   // ข้ามไม้ทดแทน
+      long m = PositionGetInteger(POSITION_TIME_MSC);
+      if(m > bestMsc) { bestMsc = m; bp = PositionGetDouble(POSITION_PRICE_OPEN); bl = PositionGetDouble(POSITION_VOLUME); }
+   }
+   if(bestMsc > pcAnchorMsc) {
+      pcAnchorMsc = bestMsc; pcAnchorPrice = bp; pcAnchorLot = bl;
+      PcSave();
+   }
+}
+
+// บรรทัดเดียวที่แทรกในส่วน Martingale เดิมเรียกตัวนี้: แทนค่า "ไม้ล่าสุด" ด้วยจุดอ้างอิงกริด
+void ApplyGridAnchor(int &totalPos, double &lastPrice, double &lastLot) {
+   if(!InpUsePairClose) return;
+   PcLoad();
+   if(InpPairMode != PAIR_REPLACE_FIXED_GRID) {   // โหมดไม่เปิดทดแทน: ปล่อยให้โค้ดเดิมใช้ไม้ล่าสุดจริง
+      if(pcAnchorMsc != 0 || pcExtra != 0) { pcAnchorMsc = 0; pcAnchorPrice = 0; pcAnchorLot = 0; pcExtra = 0; PcSave(); }
+      return;
+   }
+   if(totalPos == 0) {
+      if(pcAnchorMsc != 0 || pcRealized != 0 || pcExtra != 0) PcClear();
+      return;
+   }
+   PcSyncAnchor();
+   if(pcAnchorMsc == 0) return;
+   lastPrice = pcAnchorPrice;   // ระยะ Classic/Hybrid และ lot ถัดไปนับจากชั้นล่าสุดของกริด
+   lastLot   = pcAnchorLot;
+   totalPos += pcExtra;         // นับเป็นจำนวนชั้นกริด เพื่อให้ InpMaxLevels ยังคุมได้เหมือนเดิม
+}
+
+void ManagePairClose() {
+   if(!InpUsePairClose || mtfCutPending) return;
+   PcLoad();
+
+   // นับไม้ + หาไม้ใหม่สุด (ตามเวลาเปิดละเอียดระดับ ms)
+   int count = 0; ulong newest = 0; long newestMsc = 0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--) {
+      ulong t = PositionGetTicket(i);
+      if(!PositionSelectByTicket(t)) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpMagic || PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      count++;
+      long m = PositionGetInteger(POSITION_TIME_MSC);
+      if(newest == 0 || m > newestMsc) { newest = t; newestMsc = m; }
+   }
+   if(count < MathMax(2, InpPairStartCount)) return;
+
+   const bool grid = (InpPairMode == PAIR_REPLACE_FIXED_GRID);
+   if(grid) PcSyncAnchor();   // กันกรณีไม้ชั้นใหม่เพิ่งเปิดแล้วถูกจับคู่ปิดก่อนบันทึกจุดอ้างอิง
+
+   if(!PositionSelectByTicket(newest)) return;
+   double newestProfit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+   double newestVol    = PositionGetDouble(POSITION_VOLUME);
+   ENUM_POSITION_TYPE type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+
+   if(InpUsePairMaxLot && InpPairMaxLot > 0 && newestVol > InpPairMaxLot) return;
+   if(newestVol > SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX)) return;
+
+   // ไม้ที่ P/L ดีที่สุดในบรรดาไม้ที่เหลือ (ไม่รวมไม้ใหม่สุด)
+   ulong best = 0; double bestProfit = 0; bool found = false;
+   for(int i = PositionsTotal() - 1; i >= 0; i--) {
+      ulong t = PositionGetTicket(i);
+      if(t == newest || !PositionSelectByTicket(t)) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpMagic || PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      double p = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+      if(!found || p > bestProfit) { best = t; bestProfit = p; found = true; }
+   }
+   if(!found) return;
+
+   double pairProfit = newestProfit + bestProfit;
+   if(pairProfit < InpPairProfitUSD) return;
+
+   // ปิดคู่ แล้วเช็คผลทีละไม้ (บันทึกเฉพาะไม้ที่ปิดสำเร็จจริง)
+   bool okBest = trade.PositionClose(best);
+   bool okNew  = trade.PositionClose(newest);
+   if(okBest) { pcRealized += bestProfit;   if(grid) pcExtra++; }
+   if(okNew)  { pcRealized += newestProfit; if(grid) pcExtra++; }
+   if(!okBest || !okNew) {
+      PcSave();
+      PcPrintThrottled("PAIR-CLOSE ปิดไม่สำเร็จบางไม้: best#" + (string)best + "(" + (okBest ? "OK" : "FAIL") + ") newest#" +
+                       (string)newest + "(" + (okNew ? "OK" : "FAIL") + ") ret=" + (string)(int)trade.ResultRetcode() +
+                       " — ข้ามการเปิดไม้ทดแทน รอ tick ถัดไป");
+      return;
+   }
+
+   // เปิดไม้ทดแทน (เฉพาะโหมดเปิดทดแทน): lot เท่าไม้ใหม่สุดที่ปิดไป ที่ราคาปัจจุบัน (เช็ค margin ก่อน)
+   bool replaced = false;
+   if(grid && CheckMarginSafe(newestVol, type)) {
+      if(type == POSITION_TYPE_BUY) replaced = trade.Buy(newestVol, _Symbol, SymbolInfoDouble(_Symbol, SYMBOL_ASK), 0, 0, "BB-PC");
+      else                          replaced = trade.Sell(newestVol, _Symbol, SymbolInfoDouble(_Symbol, SYMBOL_BID), 0, 0, "BB-PC");
+   }
+   if(replaced) pcExtra--;   // ปิด 2 เปิด 1 = จำนวนไม้ลด 1 ชั้นกริดไม่ลด
+   PcSave();
+
+   PrintFormat("PAIR-CLOSE %s: newest#%s (%.2f lot) + best#%s | pair profit=%.2f | realized total=%.2f | replacement=%s",
+               (type == POSITION_TYPE_BUY ? "BUY" : "SELL"), (string)newest, newestVol, (string)best,
+               pairProfit, pcRealized, (replaced ? "OPENED" : (grid ? "NO" : "OFF")));
+}
+
+// ปิดทั้งชุดเมื่อ กำไรลอยตัว + กำไรที่ปิดคู่ไปแล้ว >= เป้า (ไม่แก้ฟังก์ชันเช็คเป้าเดิม)
+void CheckPairSetClose() {
+   if(!InpUsePairClose) return;
+   PcLoad();
+
+   int count = 0; double floating = 0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--) {
+      ulong t = PositionGetTicket(i);
+      if(!PositionSelectByTicket(t)) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpMagic || PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      count++;
+      floating += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+   }
+   if(count == 0) {
+      if(pcAnchorMsc != 0 || pcRealized != 0 || pcExtra != 0) PcClear();   // ชุดจบแล้ว รีเซ็ตสถานะ
+      return;
+   }
+   if(pcRealized <= 0) return;
+
+   double target = isCrossSystemActive ? InpCrossTargetUSD : InpTargetProfitUSD;
+   if(floating + pcRealized >= target) {
+      PcPrintThrottled("PAIR-CLOSE ปิดทั้งชุด: floating=" + DoubleToString(floating, 2) + " + realized=" +
+                       DoubleToString(pcRealized, 2) + " >= target=" + DoubleToString(target, 2));
+      CloseAllPositions();
+      lastCloseTime = TimeCurrent();
+      highestProfitUSD = 0;
+   }
+}
